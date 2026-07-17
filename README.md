@@ -1,23 +1,23 @@
 # Yachiyo Companion
 
-Yachiyo Companion is a Windows desktop companion for an OpenAI-compatible Hermes Agent. Version 0.1.0 includes a polished animated fallback avatar, streaming mock chat, optional Basic TTS, a hardened local voice sidecar, tray controls, reminders, onboarding, diagnostics, external Live2D/RVC asset adapters, and an NSIS installer.
+Yachiyo Companion is a Windows desktop companion for an OpenAI-compatible Hermes Agent. Version 0.1.1 includes a polished animated fallback avatar, streaming mock chat, optional Basic TTS, a hardened local voice sidecar, tray controls, reminders, onboarding, diagnostics, external Live2D/RVC asset adapters, and an NSIS installer.
 
 The application starts in local mock mode and needs no API key. A real Hermes connection is configured only inside Settings. The supplied Mao and Kobo assets remain external to the installer.
 
 ## Current capability status
 
-| Capability                                  | Status                                                                              |
-| ------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Windows installer and unpacked app          | Verified                                                                            |
-| Animated fallback avatar and RMS lip-sync   | Verified                                                                            |
-| Local mock Hermes streaming/errors/cancel   | Verified                                                                            |
-| Real Hermes adapter and settings            | Implemented; awaiting the user's endpoint/key                                       |
-| Edge Basic TTS, 48 kHz mono conversion      | Verified                                                                            |
-| Browser/Windows TTS fallback                | Implemented                                                                         |
-| Mao asset validation                        | 8 expressions, 7 motions, physics, pose, eye blink, and `ParamA` verified           |
-| Mao rendering                               | Adapter built; blocked because proprietary Cubism Core was not supplied             |
-| Kobo RVC                                    | Model/index verified; fallback active because RVC, RMVPE, and ContentVec are absent |
-| Tray, reminders, persistence, clean restart | Verified in Electron E2E                                                            |
+| Capability                                  | Status                                                                                |
+| ------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Windows installer and unpacked app          | Verified                                                                              |
+| Animated fallback avatar and RMS lip-sync   | Verified                                                                              |
+| Local mock Hermes streaming/errors/cancel   | Verified                                                                              |
+| Real Hermes adapter and settings            | Implemented; awaiting the user's endpoint/key                                         |
+| Edge Basic TTS, 48 kHz mono conversion      | Verified                                                                              |
+| Browser/Windows TTS fallback                | Implemented                                                                           |
+| Mao asset selection and validation          | Folder/ZIP auto-scan, visible inventory, persistence, and root normalization verified |
+| Mao rendering                               | Adapter built; blocked because proprietary Cubism Core was not supplied               |
+| Kobo RVC                                    | Model/index verified; fallback active because RVC, RMVPE, and ContentVec are absent   |
+| Tray, reminders, persistence, clean restart | Verified in Electron E2E                                                              |
 
 ## Start here
 

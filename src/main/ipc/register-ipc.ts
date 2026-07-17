@@ -1,12 +1,14 @@
-import { writeFile } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { stat, writeFile } from 'node:fs/promises'
+import { basename, extname, join, resolve } from 'node:path'
 
 import { app, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 
 import { IPC } from '../../shared/ipc'
 import {
-  assetKindSchema,
+  assetSelectionRequestSchema,
+  assetSelectionTokenSchema,
   booleanSchema,
   chatStartSchema,
   connectionTestSchema,
@@ -18,6 +20,9 @@ import {
 } from '../../shared/schemas'
 import type {
   AppStatus,
+  AssetApplyResult,
+  AssetDialogResult,
+  AssetSelectionRequest,
   AssetStatus,
   ChatEvent,
   DiagnosticReport,
@@ -52,8 +57,18 @@ type Context = {
   setAssetStatus: (status: AssetStatus) => void
 }
 
+type PendingAssetSelection = {
+  request: AssetSelectionRequest
+  selectedPath: string
+  expiresAt: number
+}
+
+const ASSET_SELECTION_TTL_MS = 5 * 60_000
+const MAX_PENDING_ASSET_SELECTIONS = 8
+
 export function registerIpc(context: Context): void {
   const controllers = new Map<string, AbortController>()
+  const pendingAssetSelections = new Map<string, PendingAssetSelection>()
   let connection: AppStatus['connection'] = 'mock'
 
   handle(IPC.appStatus, context, (): AppStatus => {
@@ -76,6 +91,13 @@ export function registerIpc(context: Context): void {
   handle(IPC.settingsUpdate, context, async (_event, input: unknown) => {
     const payload = settingsUpdateSchema.parse(input)
     const before = context.settingsStore.get()
+    if (
+      before.assets.live2dRoot !== payload.settings.assets.live2dRoot ||
+      before.assets.voiceRoot !== payload.settings.assets.voiceRoot ||
+      before.assets.cubismCorePath !== payload.settings.assets.cubismCorePath
+    ) {
+      throw new Error('Path aset hanya dapat diubah melalui dialog pemilihan aset.')
+    }
     const view = await context.settingsStore.update(payload)
     app.setLoginItemSettings({ openAtLogin: view.desktop.autoStart })
     await context.windowController.setAlwaysOnTop(view.desktop.alwaysOnTop)
@@ -83,15 +105,6 @@ export function registerIpc(context: Context): void {
     context.logger.setLevel(view.logging.level)
     context.trayController.rebuildMenu()
 
-    const assetsChanged =
-      before.assets.live2dRoot !== view.assets.live2dRoot ||
-      before.assets.voiceRoot !== view.assets.voiceRoot ||
-      before.assets.cubismCorePath !== view.assets.cubismCorePath
-    if (assetsChanged) {
-      const assets = await context.assetValidator.scan(view.assets)
-      context.setAssetStatus(assets)
-      await context.voiceSidecar.restart(assets.voice.root)
-    }
     connection = view.connection.mode === 'mock' ? 'mock' : 'offline'
     return context.settingsStore.view()
   })
@@ -111,28 +124,115 @@ export function registerIpc(context: Context): void {
   })
 
   handle(IPC.assetsScan, context, async () => {
-    const status = await context.assetValidator.scan(context.settingsStore.get().assets)
-    context.setAssetStatus(status)
-    return status
+    return refreshAssets(context, context.settingsStore.get().assets, true)
   })
-  handle(IPC.assetsChoose, context, async (_event, value: unknown) => {
-    const kind = assetKindSchema.parse(value)
-    const options: Electron.OpenDialogOptions = {
-      title:
-        kind === 'live2d'
-          ? 'Pilih folder atau ZIP Mao'
-          : kind === 'voice'
-            ? 'Pilih folder atau ZIP Kobo'
-            : 'Pilih live2dcubismcore.min.js',
-      properties: kind === 'cubism-core' ? ['openFile'] : ['openDirectory'],
-      ...(kind === 'cubism-core' ? { filters: [{ name: 'Cubism Core', extensions: ['js'] }] } : {})
-    }
+  handle(IPC.assetsChoose, context, async (_event, value: unknown): Promise<AssetDialogResult> => {
+    const request = assetSelectionRequestSchema.parse(value)
+    pruneAssetSelections(pendingAssetSelections)
+    const options = assetDialogOptions(request)
     const parent = context.windowController.browserWindow
     const result = parent
       ? await dialog.showOpenDialog(parent, options)
       : await dialog.showOpenDialog(options)
-    return { canceled: result.canceled, path: result.filePaths[0] ?? null }
+    if (result.canceled) {
+      return {
+        outcome: 'cancelled',
+        request,
+        selectedPath: null,
+        selectionToken: null,
+        message: selectionCancelledMessage(request)
+      }
+    }
+
+    const rawPath = result.filePaths[0]?.trim() ?? ''
+    if (!rawPath) {
+      return {
+        outcome: 'error',
+        request,
+        selectedPath: null,
+        selectionToken: null,
+        message: 'Dialog ditutup tanpa mengembalikan path. Pilihan sebelumnya tidak diubah.'
+      }
+    }
+
+    const selectedPath = resolve(rawPath)
+    const validationError = await validateDialogSelection(selectedPath, request)
+    if (validationError) {
+      return {
+        outcome: 'error',
+        request,
+        selectedPath,
+        selectionToken: null,
+        message: validationError
+      }
+    }
+
+    for (const [token, pending] of pendingAssetSelections) {
+      if (pending.request.kind === request.kind) pendingAssetSelections.delete(token)
+    }
+    if (pendingAssetSelections.size >= MAX_PENDING_ASSET_SELECTIONS) {
+      const oldestToken = pendingAssetSelections.keys().next().value
+      if (oldestToken) pendingAssetSelections.delete(oldestToken)
+    }
+    const selectionToken = randomUUID()
+    pendingAssetSelections.set(selectionToken, {
+      request,
+      selectedPath,
+      expiresAt: Date.now() + ASSET_SELECTION_TTL_MS
+    })
+    return {
+      outcome: 'selected',
+      request,
+      selectedPath,
+      selectionToken,
+      message: `${selectionLabel(request)} dipilih. Memindai aset…`
+    }
   })
+  handle(
+    IPC.assetsApplySelection,
+    context,
+    async (_event, value: unknown): Promise<AssetApplyResult> => {
+      const { token } = assetSelectionTokenSchema.parse(value)
+      pruneAssetSelections(pendingAssetSelections)
+      const pending = pendingAssetSelections.get(token)
+      pendingAssetSelections.delete(token)
+      if (!pending) {
+        return {
+          outcome: 'expired',
+          selectedPath: null,
+          normalizedRoot: null,
+          settings: await context.settingsStore.view(),
+          assets: context.getAssetStatus(),
+          message: 'Pilihan aset kedaluwarsa. Pilih sumber aset sekali lagi.'
+        }
+      }
+
+      const current = context.settingsStore.get()
+      const proposedAssets = withSelectedAssetPath(
+        current.assets,
+        pending.request.kind,
+        pending.selectedPath
+      )
+      let assets = await context.assetValidator.scan(proposedAssets)
+      const settings = await context.settingsStore.updateAssetPath(
+        pending.request.kind,
+        pending.selectedPath
+      )
+      if (pending.request.kind === 'voice') {
+        await context.voiceSidecar.restart(assets.voice.root)
+        assets = context.assetValidator.refreshRuntime(assets)
+      }
+      context.setAssetStatus(assets)
+      return {
+        outcome: 'applied',
+        selectedPath: pending.selectedPath,
+        normalizedRoot: pending.request.kind === 'voice' ? assets.voice.root : assets.live2d.root,
+        settings,
+        assets,
+        message: 'Pilihan aset dipindai dan disimpan.'
+      }
+    }
+  )
   handle(
     IPC.assetsOpenFolder,
     context,
@@ -350,6 +450,95 @@ function handle(
   })
 }
 
+function assetDialogOptions(request: AssetSelectionRequest): Electron.OpenDialogOptions {
+  if (request.kind === 'cubism-core') {
+    return {
+      title: 'Pilih live2dcubismcore.min.js resmi',
+      properties: ['openFile'],
+      filters: [{ name: 'Cubism Core for Web', extensions: ['js'] }]
+    }
+  }
+  const assetName = request.kind === 'live2d' ? 'Mao' : 'Kobo'
+  return request.source === 'folder'
+    ? {
+        title: `Pilih folder ${assetName}`,
+        properties: ['openDirectory']
+      }
+    : {
+        title: `Pilih ZIP ${assetName}`,
+        properties: ['openFile'],
+        filters: [{ name: `ZIP ${assetName}`, extensions: ['zip'] }]
+      }
+}
+
+async function validateDialogSelection(
+  selectedPath: string,
+  request: AssetSelectionRequest
+): Promise<string | null> {
+  if (selectedPath.length > 1_024) {
+    return 'Path yang dipilih terlalu panjang. Pilihan sebelumnya tidak diubah.'
+  }
+  const details = await stat(selectedPath).catch(() => null)
+  if (!details) return 'Path yang dipilih sudah tidak tersedia. Pilihan sebelumnya tidak diubah.'
+  if (request.source === 'folder') {
+    return details.isDirectory()
+      ? null
+      : 'Pilihan bukan folder. Gunakan “Pilih ZIP” untuk arsip .zip.'
+  }
+  if (request.source === 'zip') {
+    return details.isFile() && extname(selectedPath).toLowerCase() === '.zip'
+      ? null
+      : 'Pilihan bukan berkas ZIP yang valid. Pilihan sebelumnya tidak diubah.'
+  }
+  return details.isFile() && basename(selectedPath).toLowerCase() === 'live2dcubismcore.min.js'
+    ? null
+    : 'Pilih berkas live2dcubismcore.min.js resmi dari Cubism SDK for Web.'
+}
+
+function selectionCancelledMessage(request: AssetSelectionRequest): string {
+  return `${selectionLabel(request)} dibatalkan. Pilihan sebelumnya tidak diubah.`
+}
+
+function selectionLabel(request: AssetSelectionRequest): string {
+  if (request.kind === 'cubism-core') return 'Pemilihan Cubism Core'
+  const name = request.kind === 'live2d' ? 'Mao' : 'Kobo'
+  return request.source === 'zip' ? `ZIP ${name}` : `Folder ${name}`
+}
+
+function pruneAssetSelections(selections: Map<string, PendingAssetSelection>): void {
+  const now = Date.now()
+  for (const [token, selection] of selections) {
+    if (selection.expiresAt <= now) selections.delete(token)
+  }
+}
+
+function withSelectedAssetPath(
+  assets: {
+    live2dRoot: string
+    voiceRoot: string
+    cubismCorePath: string
+  },
+  kind: AssetSelectionRequest['kind'],
+  selectedPath: string
+): { live2dRoot: string; voiceRoot: string; cubismCorePath: string } {
+  const key = kind === 'live2d' ? 'live2dRoot' : kind === 'voice' ? 'voiceRoot' : 'cubismCorePath'
+  return { ...assets, [key]: selectedPath }
+}
+
+async function refreshAssets(
+  context: Context,
+  configured: { live2dRoot: string; voiceRoot: string; cubismCorePath: string },
+  restartVoice: boolean
+): Promise<AssetStatus> {
+  let status = await context.assetValidator.scan(configured)
+  if (restartVoice) {
+    await context.voiceSidecar.restart(status.voice.root)
+    status = context.assetValidator.refreshRuntime(status)
+  }
+  context.setAssetStatus(status)
+  return status
+}
+
 async function resolveHermesConfig(context: Context): Promise<HermesConfig> {
   const settings = context.settingsStore.get()
   if (settings.connection.mode === 'mock') {
@@ -444,6 +633,11 @@ function diagnosticAssetSummary(assets: AssetStatus): Record<string, unknown> {
       modelName: assets.live2d.modelName,
       modelVersion: assets.live2d.modelVersion,
       textureSize: assets.live2d.textureSize,
+      textures: assets.live2d.textures.map((texture) => ({
+        file: texture.file,
+        width: texture.width,
+        height: texture.height
+      })),
       expressionCount: assets.live2d.expressions.length,
       motionCount: assets.live2d.motions.length,
       eyeBlinkParameters: assets.live2d.eyeBlinkParameters,

@@ -4,20 +4,20 @@ import { join, resolve } from 'node:path'
 
 import { _electron as electron, expect, test } from '@playwright/test'
 
-import { quitApplication } from './helpers'
+import { createExternalAssetFixtures, mockNextOpenDialog, quitApplication } from './helpers'
 
 const projectRoot = resolve(import.meta.dirname, '../..')
-const installedExecutable = resolve(projectRoot, 'output/installed-smoke/Yachiyo Companion.exe')
 const unpackedExecutable = resolve(projectRoot, 'release/win-unpacked/Yachiyo Companion.exe')
-const executable = existsSync(installedExecutable) ? installedExecutable : unpackedExecutable
 const screenshots = resolve(projectRoot, 'docs/screenshots')
 
 test('packaged executable starts with clean-profile fallbacks and bundled sidecar', async () => {
-  test.skip(!existsSync(executable), 'Run npm run package before the packaged smoke test.')
+  test.setTimeout(120_000)
+  test.skip(!existsSync(unpackedExecutable), 'Run npm run package before the packaged smoke test.')
   mkdirSync(screenshots, { recursive: true })
   const dataDirectory = mkdtempSync(join(tmpdir(), 'yachiyo-packaged-'))
+  const assetFixtures = await createExternalAssetFixtures(projectRoot)
   const application = await electron.launch({
-    executablePath: executable,
+    executablePath: unpackedExecutable,
     env: {
       ...process.env,
       YACHIYO_DATA_DIR: dataDirectory,
@@ -58,65 +58,82 @@ test('packaged executable starts with clean-profile fallbacks and bundled sideca
     expect(status.voice.ffmpeg).toBe(true)
     expect(status.voice.rvc).toBe(false)
 
-    const externalStatus = await page.evaluate(
-      async ({ live2dRoot, voiceRoot }) => {
-        const api = (
-          globalThis as unknown as {
-            yachiyo: {
-              getAppStatus: () => Promise<{
-                assets: {
-                  live2d: { state: string; expressions: unknown[]; motions: unknown[] }
-                  voice: { state: string; checkpoint: string | null; index: string | null }
-                }
-              }>
-              getSettings: () => Promise<
-                Record<string, unknown> & {
-                  assets: {
-                    live2dRoot: string
-                    voiceRoot: string
-                    cubismCorePath: string
-                  }
-                  hasApiKey: boolean
-                  secureStorageAvailable: boolean
-                }
-              >
-              updateSettings: (payload: { settings: Record<string, unknown> }) => Promise<unknown>
-            }
-          }
-        ).yachiyo
-        const view = await api.getSettings()
-        const { hasApiKey: _hasApiKey, secureStorageAvailable: _secureStorage, ...settings } = view
-        void _hasApiKey
-        void _secureStorage
-        await api.updateSettings({
-          settings: {
-            ...settings,
-            assets: { ...view.assets, live2dRoot, voiceRoot }
-          }
-        })
-        return api.getAppStatus()
-      },
-      {
-        live2dRoot: resolve(projectRoot, 'assets/source/mao_en'),
-        voiceRoot: resolve(projectRoot, 'assets/source/kobo')
-      }
+    await page.getByRole('button', { name: 'Lanjut' }).click()
+    await expect(page.getByText('Mao runtime')).toBeVisible()
+    await page.getByRole('button', { name: 'Lanjut' }).click()
+    await page.getByRole('button', { name: 'Buka Yachiyo' }).click()
+    await expect(page.getByRole('button', { name: 'Buka chat dengan Yachiyo' })).toBeVisible()
+    await expect(page.getByText('Fallback aktif', { exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Atur' }).click()
+    await page
+      .getByLabel('Bagian pengaturan')
+      .getByRole('button', { name: 'Aset', exact: true })
+      .click()
+    const maoAssets = page.getByTestId('mao-asset-source')
+    const koboAssets = page.getByTestId('kobo-asset-source')
+
+    await mockNextOpenDialog(application, assetFixtures.maoParent)
+    await maoAssets.getByRole('button', { name: 'Pilih folder' }).click()
+    await expect(maoAssets.getByTestId('mao-selected-path')).toContainText(assetFixtures.maoParent)
+    await expect(maoAssets.getByTestId('mao-normalized-root')).toContainText(
+      assetFixtures.maoRuntime
     )
+    await expect(maoAssets.getByText('core-missing')).toBeVisible()
+    await expect(maoAssets.getByText(/^8 ·/)).toBeVisible()
+    await expect(maoAssets.getByText(/^7 ·/)).toBeVisible()
+
+    await mockNextOpenDialog(application, assetFixtures.koboParent)
+    const chooseKoboFolder = koboAssets.getByRole('button', { name: 'Pilih folder' })
+    await chooseKoboFolder.scrollIntoViewIfNeeded()
+    await expect(chooseKoboFolder).toBeEnabled()
+    await chooseKoboFolder.click()
+    await expect(koboAssets.getByTestId('kobo-selected-path')).toContainText(
+      assetFixtures.koboParent
+    )
+    await expect(koboAssets.getByText('runtime-missing')).toBeVisible()
+    await expect(koboAssets.getByText('kobov2.pth')).toBeVisible()
+
+    const externalStatus = await page.evaluate(async () => {
+      const api = (
+        globalThis as unknown as {
+          yachiyo: {
+            getAppStatus: () => Promise<{
+              assets: {
+                live2d: {
+                  state: string
+                  root: string | null
+                  expressions: unknown[]
+                  motions: unknown[]
+                }
+                voice: { state: string; checkpoint: string | null; index: string | null }
+              }
+            }>
+          }
+        }
+      ).yachiyo
+      return api.getAppStatus()
+    })
     expect(externalStatus.assets.live2d.state).toBe('core-missing')
+    expect(externalStatus.assets.live2d.root).toBe(assetFixtures.maoRuntime)
     expect(externalStatus.assets.live2d.expressions).toHaveLength(8)
     expect(externalStatus.assets.live2d.motions).toHaveLength(7)
     expect(externalStatus.assets.voice.state).toBe('runtime-missing')
     expect(externalStatus.assets.voice.checkpoint).not.toBeNull()
     expect(externalStatus.assets.voice.index).not.toBeNull()
-    await page.reload()
 
-    await page.getByRole('button', { name: 'Lanjut' }).click()
-    await expect(page.getByText('Mao runtime')).toBeVisible()
-    await expect(page.getByText('8 ekspresi · 7 motion')).toBeVisible()
-    await page.getByRole('button', { name: 'Lanjut' }).click()
-    await page.getByRole('button', { name: 'Buka Yachiyo' }).click()
-    await expect(page.getByRole('button', { name: 'Buka chat dengan Yachiyo' })).toBeVisible()
-    await expect(page.getByText('Fallback aktif', { exact: true })).toBeVisible()
     await page.screenshot({ path: join(screenshots, '06-packaged-fallback.png') })
+    await page.getByRole('button', { name: 'Tutup pengaturan' }).click()
+    await page.reload()
+    await expect(page.locator('.onboarding-backdrop')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Atur' }).click()
+    await page
+      .getByLabel('Bagian pengaturan')
+      .getByRole('button', { name: 'Aset', exact: true })
+      .click()
+    await expect(page.getByTestId('mao-selected-path')).toContainText(assetFixtures.maoParent)
+    await expect(page.getByTestId('kobo-selected-path')).toContainText(assetFixtures.koboParent)
+    await page.getByRole('button', { name: 'Tutup pengaturan' }).click()
     await page.getByRole('button', { name: 'Sembunyikan ke tray' }).click()
     await expect
       .poll(() =>
@@ -135,6 +152,7 @@ test('packaged executable starts with clean-profile fallbacks and bundled sideca
       .toBe(true)
   } finally {
     expect(await quitApplication(application)).toBe(true)
+    assetFixtures.cleanup()
     rmSync(dataDirectory, { recursive: true, force: true })
   }
 })

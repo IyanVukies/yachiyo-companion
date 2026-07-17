@@ -37,7 +37,7 @@ The main process owns all privileged operations:
 - atomic settings and corruption recovery;
 - Electron `safeStorage` API-key encryption;
 - network requests and streaming normalization;
-- ZIP/folder validation and hash calculation;
+- native asset dialogs, one-time selection tokens, ZIP/folder validation, and hash calculation;
 - tray, always-on-top, click-through, recovery shortcut, auto-start, and window placement;
 - reminders and native notifications;
 - sidecar lifecycle and cleanup.
@@ -51,6 +51,16 @@ Electron starts the packaged FastAPI sidecar on a reserved loopback port with a 
 The official Cubism Web Framework source is pinned at tag `5-r.5`. `scripts/build-live2d.mjs` bundles a narrow renderer adapter and copies the official shaders/license. The proprietary Core is never bundled automatically.
 
 Validated Mao files are exposed read-only as `yachiyo-asset://live2d/...`. The protocol permits only GET plus `.json`, `.moc3`, and `.png` beneath the validated runtime root. Core has a separate exact-file route. The renderer loads the Core first, then dynamically imports the Framework adapter.
+
+## Asset selection transaction
+
+1. The renderer requests only an asset kind and picker mode; it cannot submit a filesystem path.
+2. Electron main opens the matching native folder/file dialog and validates the returned result.
+3. Main returns the selected path for immediate display plus a random, one-time token that expires after five minutes.
+4. The renderer shows a scanning state and applies that token. Main consumes it, scans the proposed Mao/Core/Kobo source, persists the native-dialog selection atomically, and returns refreshed settings and inventory. An invalid asset remains selected with an explicit invalid state so it is diagnosable after restart.
+5. Cancellation, malformed dialog results, invalid assets, and runtime limitations return visible messages instead of being ignored.
+
+General settings updates are forbidden from changing asset paths. ZIP selection has a separate file action, while folder selection accepts the documented extracted roots. The renderer sandbox, path confinement, and ZIP extraction limits remain unchanged.
 
 ## Persistence
 

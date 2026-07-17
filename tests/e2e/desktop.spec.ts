@@ -4,14 +4,16 @@ import { join, resolve } from 'node:path'
 
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test'
 
-import { quitApplication } from './helpers'
+import { createExternalAssetFixtures, mockNextOpenDialog, quitApplication } from './helpers'
 
 const projectRoot = resolve(import.meta.dirname, '../..')
 const screenshots = resolve(projectRoot, 'docs/screenshots')
 
 test('onboarding, secure bridge, mock chat, and settings work in Electron', async () => {
+  test.setTimeout(120_000)
   mkdirSync(screenshots, { recursive: true })
   const dataDirectory = mkdtempSync(join(tmpdir(), 'yachiyo-e2e-'))
+  const assetFixtures = await createExternalAssetFixtures(projectRoot)
   const pageErrors: string[] = []
   const consoleErrors: string[] = []
   let application: ElectronApplication | null = await electron.launch({
@@ -72,6 +74,8 @@ test('onboarding, secure bridge, mock chat, and settings work in Electron', asyn
     expect(isolation.bridgeFrozen).toBe(true)
     expect(isolation.bridgeKeys).toContain('startChat')
     expect(isolation.bridgeKeys).toContain('updateSettings')
+    expect(isolation.bridgeKeys).toContain('chooseAssetSource')
+    expect(isolation.bridgeKeys).toContain('applyAssetSelection')
     expect(isolation.processType).toBe('undefined')
     expect(isolation.requireType).toBe('undefined')
     await expect(page.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveAttribute(
@@ -120,8 +124,42 @@ test('onboarding, secure bridge, mock chat, and settings work in Electron', asyn
       .getByRole('button', { name: 'Aset', exact: true })
       .click()
     await expect(page.getByText('Cubism Core resmi', { exact: true })).toBeVisible()
-    await expect(page.getByText(/Belum dipasang.*persetujuan lisensi Live2D/)).toBeVisible()
     await expect(page.getByText('Kobo RVC', { exact: true })).toBeVisible()
+    const maoAssets = page.getByTestId('mao-asset-source')
+    const koboAssets = page.getByTestId('kobo-asset-source')
+
+    await mockNextOpenDialog(application, null)
+    await maoAssets.getByRole('button', { name: 'Pilih folder' }).click()
+    await expect(
+      maoAssets.getByText('Folder Mao dibatalkan. Pilihan sebelumnya tidak diubah.')
+    ).toBeVisible()
+
+    await mockNextOpenDialog(application, assetFixtures.maoZip)
+    await maoAssets.getByRole('button', { name: 'Pilih ZIP' }).click()
+    await expect(maoAssets.getByTestId('mao-selected-path')).toContainText(assetFixtures.maoZip)
+    await expect(maoAssets.getByText('core-missing')).toBeVisible()
+    await expect(maoAssets.getByText('1 · smile')).toBeVisible()
+    await expect(maoAssets.getByText('mao.png (64×128)')).toBeVisible()
+
+    await mockNextOpenDialog(application, assetFixtures.maoParent)
+    await maoAssets.getByRole('button', { name: 'Ganti folder' }).click()
+    await expect(maoAssets.getByTestId('mao-selected-path')).toContainText(assetFixtures.maoParent)
+    await expect(maoAssets.getByTestId('mao-normalized-root')).toContainText(
+      assetFixtures.maoRuntime
+    )
+    await expect(maoAssets.getByText(/^8 ·/)).toBeVisible()
+    await expect(maoAssets.getByText(/^7 ·/)).toBeVisible()
+
+    await mockNextOpenDialog(application, assetFixtures.koboParent)
+    const chooseKoboFolder = koboAssets.getByRole('button', { name: 'Pilih folder' })
+    await chooseKoboFolder.scrollIntoViewIfNeeded()
+    await expect(chooseKoboFolder).toBeEnabled()
+    await chooseKoboFolder.click()
+    await expect(koboAssets.getByTestId('kobo-selected-path')).toContainText(
+      assetFixtures.koboParent
+    )
+    await expect(koboAssets.getByText('runtime-missing')).toBeVisible()
+    await expect(koboAssets.getByText('kobov2.pth')).toBeVisible()
     await page.screenshot({ path: join(screenshots, '04-asset-status.png') })
 
     await page
@@ -169,9 +207,21 @@ test('onboarding, secure bridge, mock chat, and settings work in Electron', asyn
       return api ? (await api.getSettings()).voice.mode : null
     })
     expect(restoredVoiceMode).toBe('disabled')
+    await restoredPage.getByRole('button', { name: 'Atur' }).click()
+    await restoredPage
+      .getByLabel('Bagian pengaturan')
+      .getByRole('button', { name: 'Aset', exact: true })
+      .click()
+    await expect(restoredPage.getByTestId('mao-selected-path')).toContainText(
+      assetFixtures.maoParent
+    )
+    await expect(restoredPage.getByTestId('kobo-selected-path')).toContainText(
+      assetFixtures.koboParent
+    )
     await restoredPage.screenshot({ path: join(screenshots, '05-restart-persistence.png') })
   } finally {
     if (application) await quitApplication(application)
+    assetFixtures.cleanup()
     rmSync(dataDirectory, { recursive: true, force: true })
   }
 })

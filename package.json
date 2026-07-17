@@ -1,6 +1,6 @@
 {
   "name": "yachiyo-companion",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A calm Windows desktop companion for Hermes Agent",
   "main": "./out/main/index.js",
   "author": "Yachiyo Companion contributors",
@@ -26,6 +26,9 @@
     "test:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-sidecar.ps1",
     "smoke:sidecar": "node scripts/smoke-sidecar.mjs",
     "test:e2e": "npm run build && playwright test",
+    "test:e2e:source": "npm run build && playwright test tests/e2e/desktop.spec.ts",
+    "test:e2e:packaged": "playwright test tests/e2e/packaged.spec.ts",
+    "test:e2e:installed": "playwright test tests/e2e/installed.spec.ts",
     "verify": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build:app",
     "verify:full": "npm run verify && npm run test:sidecar",
     "build:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",

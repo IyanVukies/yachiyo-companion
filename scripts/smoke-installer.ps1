@@ -6,7 +6,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$installer = Join-Path $root 'release\Yachiyo-Companion-0.1.0-x64-Setup.exe'
+$version = (Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
+$installer = Join-Path $root "release\Yachiyo-Companion-$version-x64-Setup.exe"
 $outputRoot = [IO.Path]::GetFullPath((Join-Path $root 'output'))
 $target = [IO.Path]::GetFullPath((Join-Path $outputRoot 'installed-smoke'))
 $expectedPrefix = $outputRoot + [IO.Path]::DirectorySeparatorChar

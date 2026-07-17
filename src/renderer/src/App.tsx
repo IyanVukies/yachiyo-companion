@@ -440,9 +440,17 @@ export function App(): React.JSX.Element {
             setStatus(await window.yachiyo.getAppStatus())
             return next
           }}
-          onRescan={async () => {
-            await window.yachiyo.scanAssets()
+          onChooseAsset={(request) => window.yachiyo.chooseAssetSource(request)}
+          onApplyAsset={async (token) => {
+            const result = await window.yachiyo.applyAssetSelection(token)
+            setSettings(result.settings)
             setStatus(await window.yachiyo.getAppStatus())
+            return result
+          }}
+          onRescan={async () => {
+            const assets = await window.yachiyo.scanAssets()
+            setStatus(await window.yachiyo.getAppStatus())
+            return assets
           }}
           onVoiceTest={(view) => void speak('Halo, ini tes suara Yachiyo.', view.voice)}
         />

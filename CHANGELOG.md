@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.1 — 2026-07-17
+
+Asset-selection reliability release.
+
+### Fixed
+
+- Native folder selections are shown immediately, validated automatically, persisted atomically, and restored after restart.
+- Mao accepts either the parent folder containing `runtime\mao_pro.model3.json` or the `runtime` folder itself and normalizes both to the runtime model root.
+- Mao and Kobo now expose visible scanning, success, cancellation, and plain-language validation feedback, plus explicit **Ganti folder** and **Scan ulang** actions.
+- The asset inventory now reports the model entry, expressions, motions, textures and dimensions, physics, pose, EyeBlink IDs, LipSync IDs, and Kobo model metadata.
+- Mao reports `core-missing` until an official compatible Cubism Core is selected and reports `ready` only after both assets validate.
+- ZIP support is now reachable through a separate **Pilih ZIP** action instead of being claimed without a usable picker.
+
+### Security and verification
+
+- Asset paths remain main-process-owned through one-time native-dialog selection tokens; renderer settings cannot bypass validated IPC.
+- Existing renderer sandboxing, context isolation, path confinement, ZIP traversal/size protections, and secret handling remain enabled.
+- Added renderer, IPC, validator, persistence, source Electron, packaged Electron, and installed-build regressions, including paths with spaces and non-ASCII characters.
+- Hardened the sidecar test runner with a guarded, run-scoped temporary directory so clean release workspaces are deterministic.
+
 ## 0.1.0 — 2026-07-17
 
 Initial personal Windows release.

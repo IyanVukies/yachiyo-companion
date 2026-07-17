@@ -4,7 +4,7 @@ This guide is for installing and using Yachiyo Companion without a terminal.
 
 ## 1. Install
 
-1. Open `release\Yachiyo-Companion-0.1.0-x64-Setup.exe`.
+1. Open `release\Yachiyo-Companion-0.1.1-x64-Setup.exe`.
 2. Choose an installation folder and finish setup.
 3. Windows may show a SmartScreen warning because this personal build is not code-signed. Confirm the filename and SHA-256 value in `release\checksums.txt` before choosing **Run anyway**.
 4. Open **Yachiyo Companion** from the desktop or Start menu.
@@ -19,9 +19,10 @@ Use **Lanjut** twice, review the detected capabilities, then choose **Buka Yachi
 
 Open **Atur → Aset**.
 
-- Select `assets\source\mao_en` for **Niziiro Mao**. Choose the folder that contains the `runtime` directory.
-- Select `assets\source\kobo` for **Kobo RVC**. The detector handles its extra nested `kobo` folder.
-- Choose **Scan ulang aset**.
+- For **Niziiro Mao**, choose either the extracted root folder containing `runtime\mao_pro.model3.json`, the `runtime` folder itself, or **Pilih ZIP** for `assets\source\mao_en.zip`.
+- For **Kobo RVC**, choose its extracted root folder or use its separate **Pilih ZIP** action for `assets\source\kobo.zip`. The detector handles the supplied extra nested `kobo` folder.
+- The chosen path appears immediately and is scanned automatically. Use **Scan ulang** to repeat validation or **Ganti folder** to choose another source.
+- A structurally valid Mao source shows `core-missing` until Cubism Core is selected. `ready` means that both Mao and the official Core validated.
 
 The personal installer intentionally does not copy Mao or Kobo. Keeping them external avoids redistributing assets with unresolved or separate license terms.
 
@@ -31,7 +32,7 @@ The supplied files do not contain Live2D Cubism Core. Mao cannot render until yo
 
 1. Obtain `live2dcubismcore.min.js` from the official Cubism SDK for Web.
 2. Open **Atur → Aset → Cubism Core resmi**.
-3. Select that exact file, save, and rescan.
+3. Select that exact file. Yachiyo saves it and rescans automatically.
 
 Do not rename an unrelated script. Yachiyo checks the exact filename and expected Core markers. See [LIVE2D-MODEL-GUIDE.md](LIVE2D-MODEL-GUIDE.md).
 

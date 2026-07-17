@@ -22,13 +22,15 @@ The packaged sidecar smoke produced authenticated Basic TTS audio, rejected an u
 
 ## Supplied Kobo files
 
-Detected beneath `assets\source\kobo\kobo`:
+Detected beneath the nested `kobo` directory inside `assets\source\kobo.zip`:
 
 - `kobov2.pth` — 57,575,716 bytes;
 - `added_IVF454_Flat_nprobe_1_kobov2_v2.index` — 55,948,339 bytes;
 - metadata inspected without unpickling: RVC v2, 48k, f0 enabled, 500 epochs.
 
 The checkpoint/index are not bundled in the installer.
+
+Select the extracted Kobo root in **Atur → Aset → Kobo RVC**, or use the separate **Pilih ZIP** action. The chosen path is displayed immediately, scanned automatically, and persisted after validation. The visible inventory reports the normalized model root, checkpoint, index, version, sample rate, f0 flag, training metadata, and missing runtime components. Use **Ganti folder** or **Scan ulang** when needed.
 
 ## Why RVC is unavailable now
 

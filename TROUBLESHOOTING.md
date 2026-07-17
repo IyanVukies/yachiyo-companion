@@ -2,16 +2,17 @@
 
 ## The app opens with the fallback avatar
 
-This is expected on a clean install. Open **Atur → Aset**, select the Mao folder, select the official Core file if you have accepted its license, save, and rescan.
+This is expected on a clean install. Open **Atur → Aset**, select the Mao folder or ZIP, then select the official Core file if you have accepted its license. Each selection is saved and scanned automatically.
 
 If Mao is detected but fallback remains active, **Cubism Core resmi** will usually show as missing. The supplied Mao asset does not include it.
 
 ## Mao is marked invalid
 
 - Select the folder that contains `runtime\mao_pro.model3.json`, or the supported ZIP.
+- You may also select the `runtime` folder that directly contains `mao_pro.model3.json`.
 - Keep all model JSON, MOC3, PNG, physics, pose, expression, and motion files in their original relative locations.
 - Do not select `.cmo3` or `.can3`; those editor files are not runtime entries.
-- Open Avatar Lab to read the exact issue codes and inventory.
+- Read the visible error and inventory in **Atur → Aset**, then use **Scan ulang** after correcting the files.
 
 ## Cubism Core is rejected
 
@@ -67,7 +68,7 @@ Edge TTS and optional conversion happen before playback. Network latency is the 
 
 ## Windows warns about the installer
 
-Version 0.1.0 is unsigned. Verify the installer filename and SHA-256 hash in `release\checksums.txt`. Do not bypass a warning if the hash differs.
+Version 0.1.1 is unsigned. Verify the installer filename and SHA-256 hash in `release\checksums.txt`. Do not bypass a warning if the hash differs.
 
 ## Reset everything
 

@@ -79,7 +79,7 @@ async function startApplication(): Promise<void> {
     logger
   )
   await voiceSidecar.start(assetStatus.voice.root)
-  assetStatus = await assetValidator.scan(settingsStore.get().assets)
+  assetStatus = assetValidator.refreshRuntime(assetStatus)
 
   configureSessionSecurity(() => settingsStore.get().privacy.microphoneEnabled)
   windowController = new DesktopWindowController(

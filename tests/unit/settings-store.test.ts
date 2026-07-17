@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { AppLogger } from '../../src/main/services/logger'
 import { SettingsStore } from '../../src/main/services/settings-store'
-import { defaultSettings } from '../../src/shared/schemas'
+import { defaultSettings, settingsSchema } from '../../src/shared/schemas'
 import type { SecretVault } from '../../src/main/services/secret-vault'
 
 const roots: string[] = []
@@ -45,6 +45,32 @@ describe('settings persistence', () => {
 
     expect(store.get()).toEqual(defaultSettings)
     expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(defaultSettings)
+  })
+
+  it('persists a dialog-selected asset path without changing secrets or unrelated settings', async () => {
+    const { root, path, store, vault } = await fixture()
+    roots.push(root)
+    await store.update({
+      settings: { ...defaultSettings, onboardingComplete: true },
+      apiKey: 'vault-only'
+    })
+    const selected = join(root, 'Aset Mao 日本語 dengan spasi', 'runtime')
+
+    const view = await store.updateAssetPath('live2d', selected)
+
+    expect(view.assets.live2dRoot).toBe(selected)
+    expect(view.onboardingComplete).toBe(true)
+    expect(vault.value).toBe('vault-only')
+    const persisted = settingsSchema.parse(JSON.parse(await readFile(path, 'utf8')))
+    expect(persisted.assets.live2dRoot).toBe(selected)
+
+    const reloaded = new SettingsStore(
+      path,
+      vault,
+      new AppLogger(join(root, 'reload.log'), 'error')
+    )
+    await reloaded.load()
+    expect(reloaded.get().assets.live2dRoot).toBe(selected)
   })
 })
 

@@ -2,7 +2,7 @@
 
 ## Verified supplied model
 
-Yachiyo inspected `assets\source\mao_en` directly:
+Yachiyo inspected the actual contents of `assets\source\mao_en.zip`:
 
 - entry: `runtime\mao_pro.model3.json` (model JSON version 3);
 - MOC3 version byte 5, 870,272 bytes;
@@ -24,7 +24,7 @@ After accepting the applicable official terms:
 1. Obtain the Cubism SDK for Web that matches the current Cubism 5 generation.
 2. Locate `Core\live2dcubismcore.min.js`.
 3. In Yachiyo, open **Atur → Aset → Cubism Core resmi** and choose that file.
-4. Save and rescan.
+4. Yachiyo displays the path, saves it, and rescans automatically. Use **Scan ulang** to repeat validation.
 
 ## Framework integration
 
@@ -42,14 +42,14 @@ Avatar Lab lists expression names and motion group/index values from the actual 
 
 ## Supported input contract
 
-Yachiyo accepts an extracted folder or ZIP. The model entry must ultimately be named `mao_pro.model3.json`. Referenced runtime files must remain below its directory. The read-only renderer protocol permits only `.json`, `.moc3`, and `.png` GET requests.
+Yachiyo accepts the extracted parent folder containing `runtime\mao_pro.model3.json`, the `runtime` folder containing `mao_pro.model3.json` directly, or a ZIP through the separate **Pilih ZIP** action. Both folder forms normalize to the actual runtime model root. Referenced runtime files must remain below that directory. The read-only renderer protocol permits only `.json`, `.moc3`, and `.png` GET requests.
 
 ## Status meanings
 
 - **missing**: no Mao folder/ZIP selected;
 - **invalid**: entry/reference/texture validation failed;
 - **core-missing**: Mao is valid, but Core is absent;
-- **ready**: validated Mao and official-shaped Core are both available.
+- **ready**: validated Mao and a selected official Core file that passes compatibility validation are both available.
 
 `ready` means the adapter may attempt rendering; graphics-driver or SDK compatibility errors still trigger the animated fallback.
 

@@ -1,11 +1,13 @@
 import type {
   AppSettings,
   AppStatus,
+  AssetApplyResult,
+  AssetDialogResult,
+  AssetSelectionRequest,
   AssetStatus,
   ChatEvent,
   ConnectionTestResult,
   DiagnosticReport,
-  DialogResult,
   OperationResult,
   ProactiveEvent,
   SettingsView,
@@ -21,6 +23,7 @@ export const IPC = {
   settingsReset: 'settings:reset',
   assetsScan: 'assets:scan',
   assetsChoose: 'assets:choose',
+  assetsApplySelection: 'assets:apply-selection',
   assetsOpenFolder: 'assets:open-folder',
   hermesTest: 'hermes:test',
   chatStart: 'chat:start',
@@ -52,7 +55,8 @@ export type YachiyoApi = {
   }) => Promise<SettingsView>
   resetSettings: () => Promise<SettingsView>
   scanAssets: () => Promise<AssetStatus>
-  chooseAssetFolder: (kind: 'live2d' | 'voice' | 'cubism-core') => Promise<DialogResult>
+  chooseAssetSource: (request: AssetSelectionRequest) => Promise<AssetDialogResult>
+  applyAssetSelection: (token: string) => Promise<AssetApplyResult>
   openAssetFolder: (kind: 'live2d' | 'voice') => Promise<OperationResult>
   testConnection: (payload: {
     mode: 'mock' | 'hermes'

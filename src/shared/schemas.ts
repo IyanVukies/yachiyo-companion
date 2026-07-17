@@ -219,6 +219,31 @@ export const connectionTestSchema = z
   .strict()
 
 export const assetKindSchema = z.enum(['live2d', 'voice', 'cubism-core'])
+export const assetSelectionRequestSchema = z.discriminatedUnion('source', [
+  z
+    .object({
+      kind: z.enum(['live2d', 'voice']),
+      source: z.literal('folder')
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.enum(['live2d', 'voice']),
+      source: z.literal('zip')
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('cubism-core'),
+      source: z.literal('file')
+    })
+    .strict()
+])
+export const assetSelectionTokenSchema = z
+  .object({
+    token: z.uuid()
+  })
+  .strict()
 export const booleanSchema = z.boolean()
 export const reminderActionSchema = z
   .object({

@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 
 import type {
+  assetSelectionRequestSchema,
   avatarStateSchema,
   chatMessageSchema,
   settingsSchema,
@@ -32,6 +33,12 @@ export type ExpressionInfo = {
   parameterCount: number
 }
 
+export type TextureInfo = {
+  file: string
+  width: number | null
+  height: number | null
+}
+
 export type AssetIssue = {
   code: string
   message: string
@@ -46,6 +53,7 @@ export type Live2DAssetStatus = {
   modelName: string | null
   modelVersion: number | null
   textureSize: { width: number; height: number } | null
+  textures: TextureInfo[]
   expressions: ExpressionInfo[]
   motions: MotionInfo[]
   eyeBlinkParameters: string[]
@@ -58,7 +66,7 @@ export type Live2DAssetStatus = {
 }
 
 export type VoiceAssetStatus = {
-  state: 'ready' | 'missing' | 'incomplete' | 'runtime-missing'
+  state: 'ready' | 'missing' | 'invalid' | 'incomplete' | 'runtime-missing'
   sourceKind: 'zip' | 'folder' | 'none'
   root: string | null
   checkpoint: string | null
@@ -192,9 +200,23 @@ export type ConnectionTestResult = {
   warning: string | null
 }
 
-export type DialogResult = {
-  canceled: boolean
-  path: string | null
+export type AssetSelectionRequest = z.infer<typeof assetSelectionRequestSchema>
+
+export type AssetDialogResult = {
+  outcome: 'selected' | 'cancelled' | 'error'
+  request: AssetSelectionRequest
+  selectedPath: string | null
+  selectionToken: string | null
+  message: string
+}
+
+export type AssetApplyResult = {
+  outcome: 'applied' | 'expired'
+  selectedPath: string | null
+  normalizedRoot: string | null
+  settings: SettingsView
+  assets: AssetStatus
+  message: string
 }
 
 export type OperationResult = {

@@ -58,17 +58,64 @@ export class AssetValidator {
     return { live2d, voice, scannedAt: new Date().toISOString() }
   }
 
+  refreshRuntime(status: AssetStatus): AssetStatus {
+    const runtime = this.runtimeCapabilities()
+    const issues = status.voice.issues.filter((item) => item.code !== 'RVC_RUNTIME_MISSING')
+    const complete = Boolean(status.voice.checkpoint && status.voice.index)
+    const inferenceReady = Object.values(runtime).every(Boolean)
+    if (complete && !inferenceReady) issues.push(rvcRuntimeIssue())
+    return {
+      ...status,
+      voice: {
+        ...status.voice,
+        state: complete ? (inferenceReady ? 'ready' : 'runtime-missing') : status.voice.state,
+        runtime,
+        issues
+      }
+    }
+  }
+
   private async scanLive2D(configuredRoot: string, corePath: string): Promise<Live2DAssetStatus> {
     const empty = emptyLive2D()
+    let resolvedCore: string | null = null
     try {
-      const candidate = await this.firstExistingCandidate([
-        configuredRoot,
-        process.env.YACHIYO_LIVE2D_ROOT ?? '',
-        join(this.projectRoot, 'project-assets', 'live2d', 'mao_en.zip'),
-        join(this.projectRoot, 'project-assets', 'live2d', 'mao'),
-        join(this.projectRoot, 'assets', 'source', 'mao_en')
-      ])
-      if (!candidate) return empty
+      resolvedCore = await this.resolveCore(corePath)
+      const selectedRoot = configuredRoot.trim()
+      const candidate = await this.firstExistingCandidate(
+        selectedRoot
+          ? [selectedRoot]
+          : [
+              process.env.YACHIYO_LIVE2D_ROOT ?? '',
+              join(this.projectRoot, 'project-assets', 'live2d', 'mao_en.zip'),
+              join(this.projectRoot, 'project-assets', 'live2d', 'mao'),
+              join(this.projectRoot, 'assets', 'source', 'mao_en')
+            ]
+      )
+      if (!candidate) {
+        const invalidCore = corePath.trim() && !resolvedCore ? invalidCoreIssue(corePath) : null
+        if (!selectedRoot) {
+          return {
+            ...empty,
+            hasCore: Boolean(resolvedCore),
+            issues: invalidCore ? [...empty.issues, invalidCore] : empty.issues
+          }
+        }
+        return {
+          ...empty,
+          state: 'invalid',
+          sourceKind: sourceKindForPath(selectedRoot),
+          root: resolve(selectedRoot),
+          hasCore: Boolean(resolvedCore),
+          issues: [
+            issue(
+              'LIVE2D_PATH_INVALID',
+              'Folder atau ZIP Mao yang dipilih sudah tidak ada atau bukan sumber aset yang dapat dibaca.',
+              selectedRoot
+            ),
+            ...(invalidCore ? [invalidCore] : [])
+          ]
+        }
+      }
 
       const root =
         candidate.sourceKind === 'zip'
@@ -144,32 +191,50 @@ export class AssetValidator {
         }
       }
 
-      const texturePath = safeChild(runtimeRoot, fileReferences.Textures[0] ?? '')
-      const textureSize = texturePath ? await readPngSize(texturePath) : null
-      if (texturePath && !textureSize) {
-        issues.push(
-          issue('LIVE2D_TEXTURE_INVALID', 'Texture utama bukan PNG yang dapat dibaca.', texturePath)
-        )
+      const textures: Live2DAssetStatus['textures'] = []
+      for (const texture of fileReferences.Textures) {
+        const texturePath = safeChild(runtimeRoot, texture)
+        if (!texturePath || !(await exists(texturePath))) continue
+        const size = await readPngSize(texturePath)
+        textures.push({
+          file: texture,
+          width: size?.width ?? null,
+          height: size?.height ?? null
+        })
+        if (!size) {
+          issues.push(
+            issue('LIVE2D_TEXTURE_INVALID', 'Texture model bukan PNG yang dapat dibaca.', texture)
+          )
+        }
       }
+      const textureSize = textures[0]?.width
+        ? { width: textures[0].width, height: textures[0].height ?? 0 }
+        : null
 
-      const resolvedCore = await this.resolveCore(corePath)
       if (!resolvedCore) {
         issues.push(
-          issue(
-            'CUBISM_CORE_MISSING',
-            'Aset Mao valid, tetapi Cubism Core resmi belum dipasang. Avatar fallback tetap aktif.'
-          )
+          corePath.trim()
+            ? invalidCoreIssue(corePath)
+            : issue(
+                'CUBISM_CORE_MISSING',
+                'Aset Mao valid, tetapi Cubism Core resmi belum dipasang. Avatar fallback tetap aktif.'
+              )
         )
       }
 
       const hashes: Record<string, string> = {}
-      for (const target of [entry, safeChild(runtimeRoot, fileReferences.Moc), texturePath]) {
+      const primaryTexture = safeChild(runtimeRoot, fileReferences.Textures[0] ?? '')
+      for (const target of [entry, safeChild(runtimeRoot, fileReferences.Moc), primaryTexture]) {
         if (target && (await exists(target))) hashes[basename(target)] = await sha256(target)
       }
 
       const groups = parsed.Groups ?? []
       const lipSync = groups.find((group) => group.Name === 'LipSync')?.Ids ?? []
       const eyeBlink = groups.find((group) => group.Name === 'EyeBlink')?.Ids ?? []
+      const [hasPhysics, hasPose] = await Promise.all([
+        referencedFileExists(runtimeRoot, fileReferences.Physics),
+        referencedFileExists(runtimeRoot, fileReferences.Pose)
+      ])
 
       return {
         state: issues.some((item) => item.code !== 'CUBISM_CORE_MISSING')
@@ -183,12 +248,13 @@ export class AssetValidator {
         modelName: 'Niziiro Mao',
         modelVersion: parsed.Version ?? null,
         textureSize,
+        textures,
         expressions,
         motions,
         eyeBlinkParameters: eyeBlink,
         lipSyncParameters: lipSync,
-        hasPhysics: Boolean(fileReferences.Physics),
-        hasPose: Boolean(fileReferences.Pose),
+        hasPhysics,
+        hasPose,
         hasCore: Boolean(resolvedCore),
         issues,
         hashes
@@ -198,6 +264,9 @@ export class AssetValidator {
       return {
         ...empty,
         state: 'invalid',
+        sourceKind: configuredRoot.trim() ? sourceKindForPath(configuredRoot) : 'none',
+        root: configuredRoot.trim() ? resolve(configuredRoot) : null,
+        hasCore: Boolean(resolvedCore),
         issues: [issue('LIVE2D_INVALID', toMessage(error))]
       }
     }
@@ -207,14 +276,33 @@ export class AssetValidator {
     const runtime = this.runtimeCapabilities()
     const empty = emptyVoice(runtime)
     try {
-      const candidate = await this.firstExistingCandidate([
-        configuredRoot,
-        process.env.YACHIYO_VOICE_ROOT ?? '',
-        join(this.projectRoot, 'project-assets', 'voice', 'kobo.zip'),
-        join(this.projectRoot, 'project-assets', 'voice', 'kobo'),
-        join(this.projectRoot, 'assets', 'source', 'kobo')
-      ])
-      if (!candidate) return empty
+      const selectedRoot = configuredRoot.trim()
+      const candidate = await this.firstExistingCandidate(
+        selectedRoot
+          ? [selectedRoot]
+          : [
+              process.env.YACHIYO_VOICE_ROOT ?? '',
+              join(this.projectRoot, 'project-assets', 'voice', 'kobo.zip'),
+              join(this.projectRoot, 'project-assets', 'voice', 'kobo'),
+              join(this.projectRoot, 'assets', 'source', 'kobo')
+            ]
+      )
+      if (!candidate) {
+        if (!selectedRoot) return empty
+        return {
+          ...empty,
+          state: 'invalid',
+          sourceKind: sourceKindForPath(selectedRoot),
+          root: resolve(selectedRoot),
+          issues: [
+            issue(
+              'VOICE_PATH_INVALID',
+              'Folder atau ZIP Kobo yang dipilih sudah tidak ada atau bukan sumber aset yang dapat dibaca.',
+              selectedRoot
+            )
+          ]
+        }
+      }
 
       const root =
         candidate.sourceKind === 'zip'
@@ -238,12 +326,7 @@ export class AssetValidator {
 
       const inferenceReady = Object.values(runtime).every(Boolean)
       if (checkpoint && index && !inferenceReady) {
-        issues.push(
-          issue(
-            'RVC_RUNTIME_MISSING',
-            'Model ditemukan, tetapi runtime RVC lengkap belum siap. Basic TTS akan dipakai.'
-          )
-        )
+        issues.push(rvcRuntimeIssue())
       }
 
       return {
@@ -261,7 +344,9 @@ export class AssetValidator {
       this.logger.warn('Validasi voice asset gagal.', error)
       return {
         ...empty,
-        state: 'incomplete',
+        state: 'invalid',
+        sourceKind: configuredRoot.trim() ? sourceKindForPath(configuredRoot) : 'none',
+        root: configuredRoot.trim() ? resolve(configuredRoot) : null,
         issues: [issue('VOICE_INVALID', toMessage(error))]
       }
     }
@@ -281,18 +366,27 @@ export class AssetValidator {
   }
 
   private async resolveCore(configuredPath: string): Promise<string | null> {
-    const candidates = [
-      configuredPath,
-      process.env.YACHIYO_CUBISM_CORE ?? '',
-      join(this.projectRoot, 'project-assets', 'live2d', 'sdk', 'Core', 'live2dcubismcore.min.js')
-    ]
+    const selectedPath = configuredPath.trim()
+    const candidates = selectedPath
+      ? [selectedPath]
+      : [
+          process.env.YACHIYO_CUBISM_CORE ?? '',
+          join(
+            this.projectRoot,
+            'project-assets',
+            'live2d',
+            'sdk',
+            'Core',
+            'live2dcubismcore.min.js'
+          )
+        ]
     for (const candidate of candidates) {
       if (!candidate) continue
       const target = resolve(candidate)
       if (basename(target).toLowerCase() !== 'live2dcubismcore.min.js') continue
       if (!(await exists(target))) continue
       const source = await readFile(target, 'utf8').catch(() => '')
-      if (source.includes('Live2DCubismCore') && source.includes('Cubism Core')) return target
+      if (looksLikeCubismCore(source)) return target
     }
     return null
   }
@@ -371,6 +465,7 @@ function emptyLive2D(): Live2DAssetStatus {
     modelName: null,
     modelVersion: null,
     textureSize: null,
+    textures: [],
     expressions: [],
     motions: [],
     eyeBlinkParameters: [],
@@ -399,6 +494,37 @@ function emptyVoice(runtime: VoiceAssetStatus['runtime']): VoiceAssetStatus {
 
 function issue(code: string, message: string, path?: string): AssetIssue {
   return path === undefined ? { code, message } : { code, message, path }
+}
+
+function invalidCoreIssue(path: string): AssetIssue {
+  return issue(
+    'CUBISM_CORE_INVALID',
+    'Berkas Cubism Core yang dipilih tidak valid. Pilih live2dcubismcore.min.js resmi dari Cubism SDK for Web.',
+    path
+  )
+}
+
+function rvcRuntimeIssue(): AssetIssue {
+  return issue(
+    'RVC_RUNTIME_MISSING',
+    'Model ditemukan, tetapi runtime RVC lengkap belum siap. Basic TTS akan dipakai.'
+  )
+}
+
+function looksLikeCubismCore(source: string): boolean {
+  return ['Live2DCubismCore', 'Cubism Core', 'csmGetVersion', 'Moc', 'Model'].every((marker) =>
+    source.includes(marker)
+  )
+}
+
+function sourceKindForPath(path: string): 'zip' | 'folder' {
+  return extname(path).toLowerCase() === '.zip' ? 'zip' : 'folder'
+}
+
+async function referencedFileExists(root: string, reference: string | undefined): Promise<boolean> {
+  if (!reference) return false
+  const target = safeChild(root, reference)
+  return Boolean(target && (await exists(target)))
 }
 
 function safeChild(root: string, child: string): string | null {
@@ -513,5 +639,12 @@ async function openZipStream(zip: ZipFile, entry: Entry): Promise<NodeJS.Readabl
 }
 
 function toMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Kesalahan aset tidak dikenal.'
+  if (!(error instanceof Error)) return 'Kesalahan aset tidak dikenal.'
+  if (/invalid relative path|absolute path/i.test(error.message)) {
+    return 'ZIP berisi path tidak aman dan ditolak.'
+  }
+  if (/end of central directory|invalid zip|not a zip|unexpected end/i.test(error.message)) {
+    return 'Berkas ZIP rusak atau bukan arsip ZIP yang dapat dibaca.'
+  }
+  return error.message
 }

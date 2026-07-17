@@ -4,7 +4,6 @@ import {
   Bell,
   Bot,
   Check,
-  ChevronRight,
   FileArchive,
   KeyRound,
   MonitorUp,
@@ -17,11 +16,16 @@ import {
 } from 'lucide-react'
 
 import type {
+  AssetApplyResult,
+  AssetDialogResult,
+  AssetSelectionRequest,
   AssetStatus,
   ConnectionTestResult,
   SettingsView,
   VoiceCapabilities
 } from '@shared/types'
+
+import { AssetSettings } from './AssetSettings'
 
 type Props = {
   settings: SettingsView
@@ -30,7 +34,9 @@ type Props = {
   onClose: () => void
   onSave: (settings: SettingsView, apiKey: string) => Promise<SettingsView>
   onReset: () => Promise<SettingsView>
-  onRescan: () => Promise<void>
+  onChooseAsset: (request: AssetSelectionRequest) => Promise<AssetDialogResult>
+  onApplyAsset: (token: string) => Promise<AssetApplyResult>
+  onRescan: () => Promise<AssetStatus>
   onVoiceTest: (settings: SettingsView) => void
 }
 
@@ -488,56 +494,16 @@ export function SettingsPanel(props: Props): React.JSX.Element {
         {section === 'assets' ? (
           <SettingsSection
             title="Aset eksternal"
-            description="ZIP atau folder hasil ekstrak sama-sama didukung."
+            description="Pilih folder hasil ekstrak atau ZIP secara terpisah. Setiap pilihan langsung dipindai dan disimpan."
           >
-            <AssetRow
-              title="Niziiro Mao"
-              status={`${String(props.assets.live2d.expressions.length)} ekspresi · ${String(props.assets.live2d.motions.length)} motion`}
-              tone={props.assets.live2d.state === 'ready' ? 'ready' : 'warning'}
-              onChoose={() => {
-                void window.yachiyo.chooseAssetFolder('live2d').then((result) => {
-                  if (result.path)
-                    setDraft({ ...draft, assets: { ...draft.assets, live2dRoot: result.path } })
-                })
-              }}
+            <AssetSettings
+              paths={draft.assets}
+              assets={props.assets}
+              onPathsChanged={(assets) => setDraft((current) => ({ ...current, assets }))}
+              onChoose={props.onChooseAsset}
+              onApply={props.onApplyAsset}
+              onRescan={props.onRescan}
             />
-            <AssetRow
-              title="Cubism Core resmi"
-              status={
-                props.assets.live2d.hasCore
-                  ? 'Siap'
-                  : 'Belum dipasang · perlu persetujuan lisensi Live2D'
-              }
-              tone={props.assets.live2d.hasCore ? 'ready' : 'warning'}
-              onChoose={() => {
-                void window.yachiyo.chooseAssetFolder('cubism-core').then((result) => {
-                  if (result.path)
-                    setDraft({ ...draft, assets: { ...draft.assets, cubismCorePath: result.path } })
-                })
-              }}
-            />
-            <AssetRow
-              title="Kobo RVC"
-              status={
-                props.assets.voice.state === 'ready'
-                  ? 'Runtime siap'
-                  : 'Model terdeteksi · runtime belum lengkap'
-              }
-              tone={props.assets.voice.state === 'ready' ? 'ready' : 'warning'}
-              onChoose={() => {
-                void window.yachiyo.chooseAssetFolder('voice').then((result) => {
-                  if (result.path)
-                    setDraft({ ...draft, assets: { ...draft.assets, voiceRoot: result.path } })
-                })
-              }}
-            />
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => void props.onRescan()}
-            >
-              <RefreshCw size={15} aria-hidden="true" /> Scan ulang aset
-            </button>
           </SettingsSection>
         ) : null}
 
@@ -602,7 +568,7 @@ export function SettingsPanel(props: Props): React.JSX.Element {
         ) : null}
 
         {section === 'about' ? (
-          <SettingsSection title="Tentang Yachiyo" description="Personal local build · versi 0.1.0">
+          <SettingsSection title="Tentang Yachiyo" description="Personal local build · versi 0.1.1">
             <div className="about-copy">
               <p>
                 Yachiyo Companion adalah lapisan desktop untuk Hermes Agent. Hermes tetap menjadi
@@ -692,27 +658,5 @@ function Toggle({
       />
       <i aria-hidden="true" />
     </label>
-  )
-}
-
-function AssetRow({
-  title,
-  status,
-  tone,
-  onChoose
-}: {
-  title: string
-  status: string
-  tone: 'ready' | 'warning'
-  onChoose: () => void
-}): React.JSX.Element {
-  return (
-    <button className="asset-row" type="button" data-tone={tone} onClick={onChoose}>
-      <span>
-        <strong>{title}</strong>
-        <small>{status}</small>
-      </span>
-      <ChevronRight size={16} aria-hidden="true" />
-    </button>
   )
 }

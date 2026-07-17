@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Yachiyo Companion 0.1.0 is an unlicensed/private project wrapper around several third-party components. This summary is not legal advice and does not replace the license files shipped with dependencies.
+Yachiyo Companion 0.1.1 is an unlicensed/private project wrapper around several third-party components. This summary is not legal advice and does not replace the license files shipped with dependencies.
 
 ## Live2D Cubism Web Framework
 

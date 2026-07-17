@@ -71,3 +71,27 @@
 **Decision:** Sol must build incrementally.
 
 **Reason:** “One-shot” refers to one autonomous agent session, not one untested bulk code generation step.
+
+## D-013 — Native asset paths use one-time main-process tokens
+
+**Decision:** The renderer may request an asset kind and picker mode, but cannot submit a path. Electron main returns a native-selected path for display and a short-lived, single-use token for validation and persistence.
+
+**Reason:** Immediate UX feedback is required without weakening the sandbox or allowing compromised renderer code to probe arbitrary local paths.
+
+## D-014 — Explicit asset choices are authoritative
+
+**Decision:** Once a user selects Mao, Core, or Kobo, that configured source is validated directly and never silently replaced by a development/source fallback.
+
+**Reason:** A visible invalid selection must remain diagnosable and must not appear successful because another tree happened to exist.
+
+## D-015 — Folder forms normalize; ZIP remains explicit
+
+**Decision:** Mao accepts either the parent containing `runtime\mao_pro.model3.json` or the direct `runtime` folder and normalizes both to the runtime root. ZIP uses a separate native file action for Mao and Kobo.
+
+**Reason:** These are the real supplied layouts, and a separate ZIP action makes supported behavior discoverable without ambiguous dialog modes.
+
+## D-016 — Mao readiness requires both model and Core
+
+**Decision:** A structurally valid Mao source without Core reports `core-missing`; `ready` is reserved for a valid Mao source plus a compatible selected official Core file.
+
+**Reason:** Structural model success must not imply that Live2D rendering can start.

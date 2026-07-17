@@ -71,6 +71,19 @@ export class SettingsStore {
     await this.persist()
   }
 
+  async updateAssetPath(
+    kind: 'live2d' | 'voice' | 'cubism-core',
+    selectedPath: string
+  ): Promise<SettingsView> {
+    const key = kind === 'live2d' ? 'live2dRoot' : kind === 'voice' ? 'voiceRoot' : 'cubismCorePath'
+    this.settings = settingsSchema.parse({
+      ...this.settings,
+      assets: { ...this.settings.assets, [key]: selectedPath }
+    })
+    await this.persist()
+    return this.view()
+  }
+
   async reset(): Promise<SettingsView> {
     this.settings = structuredClone(defaultSettings)
     await this.vault.clear()
