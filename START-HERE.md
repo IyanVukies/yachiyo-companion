@@ -4,7 +4,7 @@ This guide is for installing and using Yachiyo Companion without a terminal.
 
 ## 1. Install
 
-1. Open `release\Yachiyo-Companion-0.2.0-x64-Setup.exe`.
+1. Open `release\Yachiyo-Companion-0.2.1-x64-Setup.exe`.
 2. Choose an installation folder and finish setup.
 3. Windows may show a SmartScreen warning because this personal build is not code-signed. Confirm the filename and SHA-256 value in `release\checksums.txt` before choosing **Run anyway**.
 4. Open **Yachiyo Companion** from the desktop or Start menu.

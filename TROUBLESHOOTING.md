@@ -68,7 +68,7 @@ Edge TTS and RVC conversion happen before each sentence plays. Network latency a
 
 ## Windows warns about the installer
 
-Version 0.2.0 is unsigned. Verify the installer filename and SHA-256 hash in `release\checksums.txt`. Do not bypass a warning if the hash differs.
+Version 0.2.1 is unsigned. Verify `Yachiyo-Companion-0.2.1-x64-Setup.exe` and its SHA-256 hash in `release\checksums.txt`. Do not bypass a warning if the hash differs.
 
 ## Reset everything
 

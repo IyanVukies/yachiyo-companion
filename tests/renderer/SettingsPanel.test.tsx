@@ -5,7 +5,13 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { SettingsPanel } from '../../src/renderer/src/components/SettingsPanel'
 import { defaultSettings } from '../../src/shared/schemas'
-import type { AssetStatus, SettingsView, VoiceCapabilities } from '../../src/shared/types'
+import type {
+  AssetStatus,
+  ConnectionTestResult,
+  HermesConnectionStatus,
+  SettingsView,
+  VoiceCapabilities
+} from '../../src/shared/types'
 
 describe('voice settings', () => {
   it('shows setup-required feedback and starts the pinned runtime setup explicitly', async () => {
@@ -79,6 +85,79 @@ describe('voice settings', () => {
   })
 })
 
+describe('Hermes settings', () => {
+  it('saves every editable Hermes connection field and the raw key', async () => {
+    const save = vi
+      .fn<React.ComponentProps<typeof SettingsPanel>['onSave']>()
+      .mockImplementation((view) => Promise.resolve(view))
+    renderPanel(voiceWith({ runtimeState: 'ready' }), { save })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hermes VPS' }))
+    fireEvent.change(screen.getByLabelText('Base URL'), {
+      target: { value: 'http://127.0.0.1:20129/v1/' }
+    })
+    fireEvent.change(screen.getByLabelText('Nama model'), {
+      target: { value: 'hermes-agent' }
+    })
+    fireEvent.change(screen.getByLabelText(/API key/), { target: { value: ' raw-ui-key ' } })
+    fireEvent.change(screen.getByLabelText('Timeout'), { target: { value: '60000' } })
+    fireEvent.change(screen.getByLabelText('Retry aman'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    const call = save.mock.calls[0]
+    expect(call?.[0].connection).toMatchObject({
+      mode: 'hermes',
+      baseUrl: 'http://127.0.0.1:20129/v1/',
+      model: 'hermes-agent',
+      timeoutMs: 60_000,
+      retryCount: 2,
+      streaming: true
+    })
+    expect(call?.[1]).toBe(' raw-ui-key ')
+  })
+
+  it('runs the validated connection test callback and renders safe diagnostics', async () => {
+    const result = onlineConnectionResult()
+    const testConnection = vi
+      .fn<React.ComponentProps<typeof SettingsPanel>['onTestConnection']>()
+      .mockResolvedValue(result)
+    renderPanel(voiceWith({ runtimeState: 'ready' }), {
+      testConnection,
+      hermes: {
+        state: result.status,
+        message: result.message,
+        diagnostics: result.diagnostics
+      }
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hermes VPS' }))
+    fireEvent.change(screen.getByLabelText('Base URL'), {
+      target: { value: 'http://127.0.0.1:20129/v1/' }
+    })
+    fireEvent.change(screen.getByLabelText(/API key/), {
+      target: { value: '  local-secret  ' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Tes koneksi' }))
+
+    await waitFor(() =>
+      expect(testConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'hermes',
+          baseUrl: 'http://127.0.0.1:20129/v1/',
+          apiKey: '  local-secret  '
+        })
+      )
+    )
+    const diagnostics = screen.getByLabelText('Diagnostik koneksi Hermes')
+    expect(within(diagnostics).getByText('http://127.0.0.1:20129/v1')).toBeVisible()
+    expect(
+      within(diagnostics).getByText('http://127.0.0.1:20129/v1/chat/completions')
+    ).toBeVisible()
+    expect(within(diagnostics).queryByText(/local-secret/)).not.toBeInTheDocument()
+  })
+})
+
 function openVoiceSection(): void {
   fireEvent.click(screen.getByRole('button', { name: 'Suara' }))
 }
@@ -89,6 +168,9 @@ function renderPanel(
     setup?: React.ComponentProps<typeof SettingsPanel>['onVoiceRuntimeSetup']
     refresh?: React.ComponentProps<typeof SettingsPanel>['onVoiceRefresh']
     voiceTest?: React.ComponentProps<typeof SettingsPanel>['onVoiceTest']
+    testConnection?: React.ComponentProps<typeof SettingsPanel>['onTestConnection']
+    hermes?: HermesConnectionStatus
+    save?: React.ComponentProps<typeof SettingsPanel>['onSave']
   } = {}
 ): void {
   const settings: SettingsView = {
@@ -101,8 +183,12 @@ function renderPanel(
       settings={settings}
       assets={missingAssets()}
       voice={voice}
+      hermes={overrides.hermes ?? idleHermesStatus()}
       onClose={vi.fn()}
-      onSave={vi.fn().mockResolvedValue(settings)}
+      onSave={overrides.save ?? vi.fn().mockResolvedValue(settings)}
+      onTestConnection={
+        overrides.testConnection ?? vi.fn().mockResolvedValue(onlineConnectionResult())
+      }
       onReset={vi.fn().mockResolvedValue(settings)}
       onChooseAsset={vi.fn()}
       onApplyAsset={vi.fn()}
@@ -112,6 +198,51 @@ function renderPanel(
       onVoiceRefresh={overrides.refresh ?? vi.fn().mockResolvedValue(voice)}
     />
   )
+}
+
+function idleHermesStatus(): HermesConnectionStatus {
+  return {
+    state: 'mock',
+    message: 'Mock lokal aktif.',
+    diagnostics: {
+      mode: 'mock',
+      phase: 'idle',
+      normalizedBaseUrl: null,
+      modelsEndpoint: null,
+      chatEndpoint: null,
+      activeEndpoint: null,
+      selectedModel: 'yachiyo-mock',
+      httpStatus: null,
+      errorCategory: 'none',
+      timeoutMs: 30_000,
+      responseSummary: null,
+      checkedAt: null
+    }
+  }
+}
+
+function onlineConnectionResult(): ConnectionTestResult {
+  return {
+    ok: true,
+    status: 'online',
+    message: 'Koneksi Hermes dan chat completion berhasil.',
+    model: 'hermes-agent',
+    warning: null,
+    diagnostics: {
+      mode: 'hermes',
+      phase: 'chat-test',
+      normalizedBaseUrl: 'http://127.0.0.1:20129/v1',
+      modelsEndpoint: 'http://127.0.0.1:20129/v1/models',
+      chatEndpoint: 'http://127.0.0.1:20129/v1/chat/completions',
+      activeEndpoint: 'http://127.0.0.1:20129/v1/chat/completions',
+      selectedModel: 'hermes-agent',
+      httpStatus: 200,
+      errorCategory: 'none',
+      timeoutMs: 30_000,
+      responseSummary: 'models=1; selectedModelFound=true; chatContent=true',
+      checkedAt: '2026-07-17T10:00:00.000Z'
+    }
+  }
 }
 
 function voiceWith(options: {

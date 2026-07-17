@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import { IPC, type YachiyoApi } from '../shared/ipc'
-import type { ChatEvent, ProactiveEvent } from '../shared/types'
+import type { ChatEvent, HermesConnectionStatus, ProactiveEvent } from '../shared/types'
 
 const api: YachiyoApi = {
   getAppStatus: () => ipcRenderer.invoke(IPC.appStatus),
@@ -13,6 +13,7 @@ const api: YachiyoApi = {
   applyAssetSelection: (token) => ipcRenderer.invoke(IPC.assetsApplySelection, { token }),
   openAssetFolder: (kind) => ipcRenderer.invoke(IPC.assetsOpenFolder, kind),
   testConnection: (payload) => ipcRenderer.invoke(IPC.hermesTest, payload),
+  onHermesStatus: subscribeHermesStatus,
   startChat: (payload) => ipcRenderer.invoke(IPC.chatStart, payload),
   cancelChat: (requestId) => ipcRenderer.invoke(IPC.chatCancel, requestId),
   onChatEvent: subscribeChat,
@@ -36,6 +37,13 @@ const api: YachiyoApi = {
 }
 
 contextBridge.exposeInMainWorld('yachiyo', Object.freeze(api))
+
+function subscribeHermesStatus(callback: (payload: HermesConnectionStatus) => void): () => void {
+  const listener = (_event: Electron.IpcRendererEvent, payload: HermesConnectionStatus): void =>
+    callback(payload)
+  ipcRenderer.on(IPC.hermesStatus, listener)
+  return () => ipcRenderer.removeListener(IPC.hermesStatus, listener)
+}
 
 function subscribeChat(callback: (payload: ChatEvent) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, payload: ChatEvent): void =>

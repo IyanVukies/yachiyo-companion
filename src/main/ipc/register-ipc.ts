@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto'
 import { stat, writeFile } from 'node:fs/promises'
 import { basename, extname, join, resolve } from 'node:path'
 
-import { app, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import {
+  app,
+  clipboard,
+  dialog,
+  ipcMain,
+  shell,
+  type IpcMainInvokeEvent,
+  type WebContents
+} from 'electron'
 import { z } from 'zod'
 
 import { IPC } from '../../shared/ipc'
@@ -15,6 +23,7 @@ import {
   reminderActionSchema,
   reminderScheduleSchema,
   requestIdSchema,
+  type Settings,
   settingsUpdateSchema,
   voicePlaybackReportSchema,
   voiceRequestSchema
@@ -27,11 +36,19 @@ import type {
   AssetStatus,
   ChatEvent,
   DiagnosticReport,
+  HermesConnectionStatus,
   NormalizedError,
   OperationResult
 } from '../../shared/types'
 import type { AssetValidator } from '../services/asset-validator'
-import { HermesClient, HermesRequestError, type HermesConfig } from '../services/hermes-client'
+import {
+  HermesClient,
+  HermesRequestError,
+  normalizeHermesApiKey,
+  normalizeHermesBaseUrl,
+  sameHermesDestination
+} from '../services/hermes-client'
+import { HermesRuntime } from '../services/hermes-runtime'
 import type { AppLogger } from '../services/logger'
 import type { MockHermesServer } from '../services/mock-hermes-server'
 import type { ProactiveService } from '../services/proactive-service'
@@ -67,16 +84,26 @@ type PendingAssetSelection = {
 const ASSET_SELECTION_TTL_MS = 5 * 60_000
 const MAX_PENDING_ASSET_SELECTIONS = 8
 
-export function registerIpc(context: Context): void {
+export function registerIpc(context: Context): () => void {
   const controllers = new Map<string, AbortController>()
   const pendingAssetSelections = new Map<string, PendingAssetSelection>()
-  let connection: AppStatus['connection'] = 'mock'
+  const hermesRuntime = new HermesRuntime({
+    settingsStore: context.settingsStore,
+    mockServer: context.mockServer,
+    hermesClient: context.hermesClient,
+    logger: context.logger
+  })
+  const unsubscribeHermes = hermesRuntime.onStatus((status) => {
+    context.windowController.browserWindow?.webContents.send(IPC.hermesStatus, status)
+  })
 
   handle(IPC.appStatus, context, (): AppStatus => {
     const settings = context.settingsStore.get()
+    const hermes = hermesRuntime.getStatus()
     return {
       version: app.getVersion(),
-      connection: settings.connection.mode === 'mock' ? 'mock' : connection,
+      connection: hermes.state,
+      hermes,
       mockServerReady: true,
       trayReady: context.trayController.isReady,
       clickThrough: settings.desktop.clickThrough,
@@ -99,15 +126,32 @@ export function registerIpc(context: Context): void {
     ) {
       throw new Error('Path aset hanya dapat diubah melalui dialog pemilihan aset.')
     }
-    const view = await context.settingsStore.update(payload)
+    const settings = normalizeConnectionSettings(payload.settings)
+    const explicitKey =
+      payload.apiKey === undefined ? undefined : normalizeHermesApiKey(payload.apiKey)
+    const destinationChanged =
+      before.connection.baseUrl.trim() !== settings.connection.baseUrl.trim() &&
+      !sameHermesDestination(before.connection.baseUrl, settings.connection.baseUrl)
+    if (destinationChanged && (await context.vault.has()) && !explicitKey && !payload.clearApiKey) {
+      throw new Error('Masukkan ulang API key saat Base URL Hermes berubah.')
+    }
+    const view = await context.settingsStore.update({
+      ...payload,
+      settings,
+      ...(explicitKey ? { apiKey: explicitKey } : { apiKey: undefined })
+    })
+    void hermesRuntime.settingsChanged().catch(() => {
+      context.logger.warn('Konfigurasi Hermes tersimpan, tetapi pemeriksaan ulang gagal.', {
+        errorType: 'runtime-refresh'
+      })
+    })
     app.setLoginItemSettings({ openAtLogin: view.desktop.autoStart })
     await context.windowController.setAlwaysOnTop(view.desktop.alwaysOnTop)
     await context.windowController.setClickThrough(view.desktop.clickThrough)
     context.logger.setLevel(view.logging.level)
     context.trayController.rebuildMenu()
 
-    connection = view.connection.mode === 'mock' ? 'mock' : 'offline'
-    return context.settingsStore.view()
+    return view
   })
 
   handle(IPC.settingsReset, context, async () => {
@@ -120,7 +164,11 @@ export function registerIpc(context: Context): void {
     const assets = await context.assetValidator.scan(view.assets)
     context.setAssetStatus(assets)
     await context.voiceSidecar.restart(assets.voice.root)
-    connection = 'mock'
+    void hermesRuntime.settingsChanged().catch(() => {
+      context.logger.warn('Reset Hermes tersimpan, tetapi refresh runtime gagal.', {
+        errorType: 'runtime-refresh'
+      })
+    })
     return context.settingsStore.view()
   })
 
@@ -251,27 +299,7 @@ export function registerIpc(context: Context): void {
 
   handle(IPC.hermesTest, context, async (_event, input: unknown) => {
     const payload = connectionTestSchema.parse(input)
-    const savedKey = await context.vault.get()
-    const enteredKey = payload.apiKey?.trim()
-    const effectiveKey = [enteredKey, savedKey].find(
-      (candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0
-    )
-    const config =
-      payload.mode === 'mock'
-        ? {
-            ...context.mockServer.config,
-            timeoutMs: payload.timeoutMs
-          }
-        : {
-            baseUrl: payload.baseUrl,
-            apiKey: effectiveKey ?? '',
-            model: payload.model,
-            timeoutMs: payload.timeoutMs
-          }
-    connection = 'connecting'
-    const result = await context.hermesClient.test(config)
-    connection = result.ok ? 'connected' : result.status === 'auth-error' ? 'auth-error' : 'offline'
-    return result
+    return hermesRuntime.testDraft(payload)
   })
 
   handle(IPC.chatStart, context, (_event, input: unknown): OperationResult => {
@@ -282,61 +310,52 @@ export function registerIpc(context: Context): void {
     const controller = new AbortController()
     controllers.set(payload.requestId, controller)
     const webContents = context.windowController.browserWindow?.webContents
-    webContents?.send(IPC.chatEvent, {
+    sendChatEvent(webContents, context.logger, {
       type: 'started',
       requestId: payload.requestId
-    } satisfies ChatEvent)
+    })
 
     void (async () => {
       let partialText = ''
       try {
-        const config = await resolveHermesConfig(context)
-        connection = context.settingsStore.get().connection.mode === 'mock' ? 'mock' : 'connecting'
-        const result = await context.hermesClient.stream(
-          config,
-          payload.messages,
-          controller.signal,
-          (text) => {
-            partialText += text
-            webContents?.send(IPC.chatEvent, {
-              type: 'delta',
-              requestId: payload.requestId,
-              text
-            } satisfies ChatEvent)
-          }
-        )
-        connection = context.settingsStore.get().connection.mode === 'mock' ? 'mock' : 'connected'
+        const result = await hermesRuntime.stream(payload.messages, controller.signal, (text) => {
+          partialText += text
+          sendChatEvent(webContents, context.logger, {
+            type: 'delta',
+            requestId: payload.requestId,
+            text
+          })
+        })
         if (result.metadata) {
-          webContents?.send(IPC.chatEvent, {
+          sendChatEvent(webContents, context.logger, {
             type: 'metadata',
             requestId: payload.requestId,
             metadata: result.metadata
-          } satisfies ChatEvent)
+          })
         }
-        webContents?.send(IPC.chatEvent, {
+        sendChatEvent(webContents, context.logger, {
           type: 'done',
           requestId: payload.requestId,
           text: result.displayText
-        } satisfies ChatEvent)
+        })
       } catch (error) {
         if (controller.signal.aborted) {
-          webContents?.send(IPC.chatEvent, {
+          sendChatEvent(webContents, context.logger, {
             type: 'cancelled',
             requestId: payload.requestId,
             partialText
-          } satisfies ChatEvent)
+          })
         } else {
           const requestError =
             error instanceof HermesRequestError
               ? error
               : new HermesRequestError(unknownHermesError(), partialText)
-          connection = context.settingsStore.get().connection.mode === 'mock' ? 'mock' : 'offline'
-          webContents?.send(IPC.chatEvent, {
+          sendChatEvent(webContents, context.logger, {
             type: 'error',
             requestId: payload.requestId,
             error: requestError.normalized,
             partialText: requestError.partialText || partialText
-          } satisfies ChatEvent)
+          })
         }
       } finally {
         controllers.delete(payload.requestId)
@@ -415,7 +434,7 @@ export function registerIpc(context: Context): void {
   })
 
   handle(IPC.diagnosticsExport, context, async () => {
-    const report = createDiagnosticReport(context)
+    const report = createDiagnosticReport(context, hermesRuntime.getStatus())
     const options: Electron.SaveDialogOptions = {
       title: 'Simpan diagnostik aman',
       defaultPath: `yachiyo-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
@@ -440,6 +459,14 @@ export function registerIpc(context: Context): void {
     context.windowController.browserWindow?.webContents.send(IPC.proactiveEvent, event)
     if (event.type === 'delivered') context.windowController.show()
   })
+
+  void hermesRuntime.start().catch((error: unknown) => {
+    context.logger.warn('Pemeriksaan awal Hermes gagal.', error)
+  })
+  return () => {
+    unsubscribeHermes()
+    hermesRuntime.stop()
+  }
 }
 
 function handle(
@@ -455,13 +482,38 @@ function handle(
     try {
       return await handler(event, ...args)
     } catch (error) {
-      context.logger.warn(`IPC ${channel} ditolak.`, error)
+      context.logger.warn(`IPC ${channel} ditolak.`, safeIpcErrorDetail(error))
       if (error instanceof z.ZodError) {
         throw new Error('Input aplikasi tidak valid.', { cause: error })
       }
       throw error
     }
   })
+}
+
+function safeIpcErrorDetail(error: unknown): Record<string, unknown> {
+  if (error instanceof z.ZodError) {
+    return {
+      errorType: 'validation',
+      issues: error.issues.map((issue) => ({ code: issue.code, path: issue.path.join('.') }))
+    }
+  }
+  return {
+    errorType: error instanceof Error ? error.name : 'unknown'
+  }
+}
+
+function sendChatEvent(
+  webContents: WebContents | undefined,
+  logger: AppLogger,
+  event: ChatEvent
+): void {
+  try {
+    if (!webContents) return
+    webContents.send(IPC.chatEvent, event)
+  } catch {
+    logger.warn('Event chat tidak dapat dikirim ke renderer.', { eventType: event.type })
+  }
 }
 
 function assetDialogOptions(request: AssetSelectionRequest): Electron.OpenDialogOptions {
@@ -553,25 +605,16 @@ async function refreshAssets(
   return status
 }
 
-async function resolveHermesConfig(context: Context): Promise<HermesConfig> {
-  const settings = context.settingsStore.get()
-  if (settings.connection.mode === 'mock') {
+function normalizeConnectionSettings(settings: Settings): Settings {
+  if (settings.connection.mode !== 'hermes') return settings
+  try {
+    const normalizedBaseUrl = normalizeHermesBaseUrl(settings.connection.baseUrl).toString()
     return {
-      ...context.mockServer.config,
-      timeoutMs: settings.connection.timeoutMs,
-      streaming: settings.connection.streaming,
-      retryCount: settings.connection.retryCount,
-      sessionId: settings.connection.sessionId
+      ...settings,
+      connection: { ...settings.connection, baseUrl: normalizedBaseUrl }
     }
-  }
-  return {
-    baseUrl: settings.connection.baseUrl,
-    apiKey: (await context.vault.get()) ?? '',
-    model: settings.connection.model,
-    timeoutMs: settings.connection.timeoutMs,
-    streaming: settings.connection.streaming,
-    retryCount: settings.connection.retryCount,
-    sessionId: settings.connection.sessionId
+  } catch {
+    throw new Error('Base URL Hermes tidak valid. Gunakan alamat HTTP(S) tanpa kredensial URL.')
   }
 }
 
@@ -583,11 +626,18 @@ function unknownHermesError(): NormalizedError {
     dataSafe: true,
     availableFeatures: ['Avatar', 'Pengaturan', 'Pengingat lokal', 'Hermes mock'],
     nextAction: 'Coba lagi atau gunakan mode Mock.',
-    retryable: true
+    retryable: true,
+    category: 'response',
+    httpStatus: null,
+    endpoint: null,
+    responseSummary: null
   }
 }
 
-function createDiagnosticReport(context: Context): DiagnosticReport {
+function createDiagnosticReport(
+  context: Context,
+  hermes: HermesConnectionStatus
+): DiagnosticReport {
   const settings = context.settingsStore.get()
   return {
     generatedAt: new Date().toISOString(),
@@ -597,10 +647,24 @@ function createDiagnosticReport(context: Context): DiagnosticReport {
       schemaVersion: settings.schemaVersion,
       connection: {
         mode: settings.connection.mode,
-        baseUrl: sanitizedUrl(settings.connection.baseUrl),
-        modelConfigured: Boolean(settings.connection.model),
+        baseUrl: sanitizedUrl(hermes.diagnostics.normalizedBaseUrl ?? settings.connection.baseUrl),
+        selectedModel: settings.connection.model,
         timeoutMs: settings.connection.timeoutMs,
-        streaming: settings.connection.streaming
+        retryCount: settings.connection.retryCount,
+        streaming: settings.connection.streaming,
+        status: hermes.state,
+        endpoints: {
+          models: sanitizedUrl(hermes.diagnostics.modelsEndpoint ?? ''),
+          chat: sanitizedUrl(hermes.diagnostics.chatEndpoint ?? '')
+        },
+        lastCheck: {
+          phase: hermes.diagnostics.phase,
+          activeEndpoint: sanitizedUrl(hermes.diagnostics.activeEndpoint ?? ''),
+          httpStatus: hermes.diagnostics.httpStatus,
+          errorCategory: hermes.diagnostics.errorCategory,
+          responseSummary: hermes.diagnostics.responseSummary,
+          checkedAt: hermes.diagnostics.checkedAt
+        }
       },
       voice: {
         mode: settings.voice.mode,
@@ -634,7 +698,8 @@ function createDiagnosticReport(context: Context): DiagnosticReport {
       nodeIntegration: false,
       rendererSandbox: true,
       mockHermes: true,
-      secretIncluded: false
+      secretIncluded: false,
+      hermesState: hermes.state
     }
   }
 }

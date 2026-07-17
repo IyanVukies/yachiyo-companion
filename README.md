@@ -1,6 +1,6 @@
 # Yachiyo Companion
 
-Yachiyo Companion is a Windows desktop companion for an OpenAI-compatible Hermes Agent. Version 0.2.0 includes Mao Live2D support, streaming mock chat, Basic TTS plus Kobo RVC v2, a hardened local Python sidecar, tray controls, reminders, onboarding, diagnostics, external model adapters, and an NSIS installer.
+Yachiyo Companion is a Windows desktop companion for an OpenAI-compatible Hermes Agent. Version 0.2.1 adds reliable end-to-end Hermes VPS configuration, runtime chat, connection status, endpoint normalization, streaming, and safe diagnostics while preserving the Mao Live2D and Kobo RVC v2 pipeline from 0.2.0.
 
 The application starts in local mock mode and needs no API key. A real Hermes connection is configured only inside Settings. The supplied Mao and Kobo assets remain external to the installer.
 

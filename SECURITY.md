@@ -44,7 +44,7 @@ Only use assets from a source you trust. Mao and Kobo remain external. Yachiyo v
 
 ## Release risks
 
-- Version 0.2.0 is not Authenticode-signed, so SmartScreen may warn.
+- Version 0.2.1 is not Authenticode-signed, so SmartScreen may warn.
 - Cubism Core and Mao remain external licensed assets and are not redistributed by the installer.
 - Kobo has no supplied license/provenance document. Actual local inference is verified for this personal profile, but that does not grant redistribution or impersonation rights.
 - The audited installer baseline contains CPU PyTorch. CUDA requires a separately compatible trusted runtime and is not claimed for this release machine.

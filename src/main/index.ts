@@ -30,6 +30,7 @@ let mockServer: MockHermesServer | null = null
 let voiceSidecar: VoiceSidecar | null = null
 let proactiveService: ProactiveService | null = null
 let logger: AppLogger | null = null
+let disposeIpc: (() => void) | null = null
 
 const hasLock = app.requestSingleInstanceLock()
 if (!hasLock) {
@@ -108,7 +109,7 @@ async function startApplication(): Promise<void> {
     logger
   )
   const hermesClient = new HermesClient()
-  registerIpc({
+  disposeIpc = registerIpc({
     dataRoot,
     projectRoot,
     settingsStore,
@@ -146,6 +147,8 @@ async function startApplication(): Promise<void> {
     quitting = true
     windowController?.setQuitting()
     proactiveService?.stop()
+    disposeIpc?.()
+    disposeIpc = null
     voiceSidecar?.stop()
     void mockServer?.stop()
   })

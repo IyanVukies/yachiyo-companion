@@ -1,4 +1,21 @@
-# Final Verification — Yachiyo Companion 0.2.0
+# Final Verification — Yachiyo Companion 0.2.1
+
+## Hermes integration outcome
+
+The 0.2.1 Hermes path passes unit/integration coverage (104 tests), source Electron E2E with a real loopback OpenAI-compatible server, packaged Electron smoke, NSIS build, and silent installer smoke. Test connection now verifies both `/v1/models` and `/v1/chat/completions`, updates the badge immediately, and Save applies the same configuration to runtime chat without restart. JSON and SSE chat plus startup reconnect were verified.
+
+- Installer: `release\Yachiyo-Companion-0.2.1-x64-Setup.exe`
+- Bytes: `385451545`
+- SHA-256: `25575642234AEFBBED50E46092DE3D7C31D865A2F183E06BB834E3BF251141A9`
+- Authenticode: `NotSigned`
+- Detailed Hermes report: `docs\HERMES-0.2.1-VERIFICATION.md`
+- Security/root-cause audit: `docs\HERMES-INTEGRATION-AUDIT-0.2.1.md`
+
+The production VPS/key remains a manual test. The final installed RVC E2E separately fails because the unchanged voice host kills a model restart at its existing 20-second startup deadline under Playwright; the packaged sidecar itself reports model/index/RVC ready in a direct probe. This is recorded rather than hidden or patched outside the requested Hermes scope.
+
+---
+
+# Historical verification — Yachiyo Companion 0.2.0
 
 ## Release identity
 

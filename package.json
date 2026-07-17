@@ -1,6 +1,6 @@
 {
   "name": "yachiyo-companion",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A calm Windows desktop companion for Hermes Agent",
   "main": "./out/main/index.js",
   "author": "Yachiyo Companion contributors",

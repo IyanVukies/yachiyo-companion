@@ -17,6 +17,7 @@ import type {
   AvatarState,
   ChatEvent,
   ChatMessage,
+  HermesConnectionStatus,
   NormalizedError,
   ProactiveEvent,
   Reminder,
@@ -39,8 +40,7 @@ type Panel = 'chat' | 'settings' | 'lab' | 'reminders' | null
 const WELCOME_MESSAGE: ChatMessage = {
   id: '00000000-0000-4000-8000-000000000001',
   role: 'assistant',
-  content:
-    'Halo. Aku berjalan dengan Hermes mock lokal, jadi kita bisa langsung menguji chat tanpa API key.',
+  content: 'Halo. Aku siap menemanimu. Status di atas menunjukkan koneksi yang sedang digunakan.',
   createdAt: new Date(0).toISOString()
 }
 
@@ -61,7 +61,13 @@ export function App(): React.JSX.Element {
   const [avatar, dispatchAvatar] = useReducer(avatarReducer, initialAvatarState)
   const requestAssistantIds = useRef(new Map<string, string>())
   const settingsRef = useRef<SettingsView | null>(null)
+  const latestHermesStatus = useRef<HermesConnectionStatus | null>(null)
   const live2dRef = useRef<Live2DAvatarHandle>(null)
+
+  const applyStatus = useCallback((nextStatus: AppStatus): void => {
+    const hermes = latestHermesStatus.current
+    setStatus(hermes ? { ...nextStatus, connection: hermes.state, hermes } : nextStatus)
+  }, [])
 
   useEffect(() => {
     settingsRef.current = settings
@@ -78,9 +84,9 @@ export function App(): React.JSX.Element {
   const refreshVoice = useCallback(async (): Promise<VoiceCapabilities> => {
     const voice = await window.yachiyo.getVoiceCapabilities()
     const nextStatus = await window.yachiyo.getAppStatus()
-    setStatus({ ...nextStatus, voice })
+    applyStatus({ ...nextStatus, voice })
     return voice
-  }, [])
+  }, [applyStatus])
 
   useEffect(() => {
     let active = true
@@ -91,7 +97,7 @@ export function App(): React.JSX.Element {
     ])
       .then(([nextStatus, nextSettings, nextReminders]) => {
         if (!active) return
-        setStatus(nextStatus)
+        applyStatus(nextStatus)
         setSettings(nextSettings)
         setReminders(nextReminders)
       })
@@ -105,9 +111,13 @@ export function App(): React.JSX.Element {
     return () => {
       active = false
     }
-  }, [])
+  }, [applyStatus])
 
   useEffect(() => {
+    const unsubscribeHermes = window.yachiyo.onHermesStatus((hermes) => {
+      latestHermesStatus.current = hermes
+      setStatus((current) => (current ? { ...current, connection: hermes.state, hermes } : current))
+    })
     const unsubscribeChat = window.yachiyo.onChatEvent((event) => {
       handleChatEvent(
         event,
@@ -129,6 +139,7 @@ export function App(): React.JSX.Element {
     })
     const unsubscribeCommand = window.yachiyo.onAppCommand((command) => setPanel(command))
     return () => {
+      unsubscribeHermes()
       unsubscribeChat()
       unsubscribeProactive()
       unsubscribeCommand()
@@ -167,18 +178,26 @@ export function App(): React.JSX.Element {
       void window.yachiyo
         .startChat({
           requestId,
-          messages: nextMessages.map(({ role, content }) => ({ role, content }))
+          messages: nextMessages
+            .filter(({ content }) => content.trim())
+            .map(({ role, content }) => ({ role, content }))
         })
         .then((result) => {
           if (!result.ok) {
             setCurrentRequest(null)
             setNotice(result.message)
+            setMessages((current) =>
+              current.filter((message) => message.id !== assistantMessage.id)
+            )
+            requestAssistantIds.current.delete(requestId)
           }
         })
         .catch(() => {
           setCurrentRequest(null)
           setNotice('Permintaan chat tidak dapat dimulai.')
           setAvatarState('error')
+          setMessages((current) => current.filter((message) => message.id !== assistantMessage.id))
+          requestAssistantIds.current.delete(requestId)
         })
     },
     [currentRequest, messages, setAvatarState]
@@ -430,6 +449,7 @@ export function App(): React.JSX.Element {
           settings={settings}
           assets={assets}
           voice={status.voice}
+          hermes={status.hermes}
           onClose={() => setPanel(null)}
           onSave={async (view, apiKey) => {
             const plainSettings = toAppSettings(view)
@@ -438,25 +458,30 @@ export function App(): React.JSX.Element {
               ...(apiKey ? { apiKey } : {})
             })
             setSettings(next)
-            setStatus(await window.yachiyo.getAppStatus())
+            applyStatus(await window.yachiyo.getAppStatus())
             return next
+          }}
+          onTestConnection={async (payload) => {
+            const result = await window.yachiyo.testConnection(payload)
+            applyStatus(await window.yachiyo.getAppStatus())
+            return result
           }}
           onReset={async () => {
             const next = await window.yachiyo.resetSettings()
             setSettings(next)
-            setStatus(await window.yachiyo.getAppStatus())
+            applyStatus(await window.yachiyo.getAppStatus())
             return next
           }}
           onChooseAsset={(request) => window.yachiyo.chooseAssetSource(request)}
           onApplyAsset={async (token) => {
             const result = await window.yachiyo.applyAssetSelection(token)
             setSettings(result.settings)
-            setStatus(await window.yachiyo.getAppStatus())
+            applyStatus(await window.yachiyo.getAppStatus())
             return result
           }}
           onRescan={async () => {
             const assets = await window.yachiyo.scanAssets()
-            setStatus(await window.yachiyo.getAppStatus())
+            applyStatus(await window.yachiyo.getAppStatus())
             return assets
           }}
           onVoiceTest={async (view, mode) => {
@@ -558,11 +583,13 @@ function handleChatEvent(
     return
   }
   if (event.type === 'error') {
-    if (assistantId && event.partialText) {
+    if (assistantId) {
       setMessages((current) =>
-        current.map((message) =>
-          message.id === assistantId ? { ...message, content: event.partialText } : message
-        )
+        event.partialText
+          ? current.map((message) =>
+              message.id === assistantId ? { ...message, content: event.partialText } : message
+            )
+          : current.filter((message) => message.id !== assistantId)
       )
     }
     setCurrentRequest(null)
@@ -572,6 +599,9 @@ function handleChatEvent(
     return
   }
   if (event.type === 'cancelled') {
+    if (assistantId && !event.partialText) {
+      setMessages((current) => current.filter((message) => message.id !== assistantId))
+    }
     setCurrentRequest(null)
     dispatchAvatar({ type: 'transition', state: 'idle' })
     requestMap.delete(event.requestId)

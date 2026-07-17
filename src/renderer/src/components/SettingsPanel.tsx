@@ -21,6 +21,9 @@ import type {
   AssetSelectionRequest,
   AssetStatus,
   ConnectionTestResult,
+  HermesConnectionDiagnostics,
+  HermesConnectionState,
+  HermesConnectionStatus,
   SettingsView,
   VoiceCapabilities
 } from '@shared/types'
@@ -31,8 +34,16 @@ type Props = {
   settings: SettingsView
   assets: AssetStatus
   voice: VoiceCapabilities
+  hermes: HermesConnectionStatus
   onClose: () => void
   onSave: (settings: SettingsView, apiKey: string) => Promise<SettingsView>
+  onTestConnection: (payload: {
+    mode: 'mock' | 'hermes'
+    baseUrl: string
+    model: string
+    timeoutMs: number
+    apiKey?: string
+  }) => Promise<ConnectionTestResult>
   onReset: () => Promise<SettingsView>
   onChooseAsset: (request: AssetSelectionRequest) => Promise<AssetDialogResult>
   onApplyAsset: (token: string) => Promise<AssetApplyResult>
@@ -92,6 +103,8 @@ export function SettingsPanel(props: Props): React.JSX.Element {
       setDraft(next)
       setApiKey('')
       setFeedback('Pengaturan tersimpan.')
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Pengaturan tidak dapat disimpan.')
     } finally {
       setBusy(false)
     }
@@ -135,24 +148,26 @@ export function SettingsPanel(props: Props): React.JSX.Element {
         {section === 'connection' ? (
           <SettingsSection
             title="Koneksi Hermes"
-            description="Mock lokal aktif sampai koneksi asli lolos tes."
+            description="Mode tersimpan menentukan provider chat; mock lokal tetap tersedia saat diperlukan."
           >
             <div className="segmented-control" aria-label="Mode koneksi">
               <button
                 type="button"
                 data-active={draft.connection.mode === 'mock'}
-                onClick={() =>
+                onClick={() => {
+                  setConnectionResult(null)
                   setDraft({ ...draft, connection: { ...draft.connection, mode: 'mock' } })
-                }
+                }}
               >
                 Mock lokal
               </button>
               <button
                 type="button"
                 data-active={draft.connection.mode === 'hermes'}
-                onClick={() =>
+                onClick={() => {
+                  setConnectionResult(null)
                   setDraft({ ...draft, connection: { ...draft.connection, mode: 'hermes' } })
-                }
+                }}
               >
                 Hermes VPS
               </button>
@@ -163,12 +178,13 @@ export function SettingsPanel(props: Props): React.JSX.Element {
                 value={draft.connection.baseUrl}
                 disabled={draft.connection.mode === 'mock'}
                 placeholder="https://hermes.example.com"
-                onChange={(event) =>
+                onChange={(event) => {
+                  setConnectionResult(null)
                   setDraft({
                     ...draft,
                     connection: { ...draft.connection, baseUrl: event.target.value }
                   })
-                }
+                }}
               />
             </label>
             <label className="field">
@@ -176,12 +192,13 @@ export function SettingsPanel(props: Props): React.JSX.Element {
               <input
                 value={draft.connection.model}
                 disabled={draft.connection.mode === 'mock'}
-                onChange={(event) =>
+                onChange={(event) => {
+                  setConnectionResult(null)
                   setDraft({
                     ...draft,
                     connection: { ...draft.connection, model: event.target.value }
                   })
-                }
+                }}
               />
             </label>
             <label className="field">
@@ -196,7 +213,10 @@ export function SettingsPanel(props: Props): React.JSX.Element {
                   placeholder={
                     draft.hasApiKey ? '•••••••• (tidak ditampilkan)' : 'Masukkan secara lokal'
                   }
-                  onChange={(event) => setApiKey(event.target.value)}
+                  onChange={(event) => {
+                    setConnectionResult(null)
+                    setApiKey(event.target.value)
+                  }}
                 />
               </span>
             </label>
@@ -205,12 +225,13 @@ export function SettingsPanel(props: Props): React.JSX.Element {
                 <span>Timeout</span>
                 <select
                   value={draft.connection.timeoutMs}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    setConnectionResult(null)
                     setDraft({
                       ...draft,
                       connection: { ...draft.connection, timeoutMs: Number(event.target.value) }
                     })
-                  }
+                  }}
                 >
                   <option value={15_000}>15 detik</option>
                   <option value={30_000}>30 detik</option>
@@ -240,15 +261,21 @@ export function SettingsPanel(props: Props): React.JSX.Element {
               disabled={busy}
               onClick={() => {
                 setBusy(true)
-                void window.yachiyo
-                  .testConnection({
+                void props
+                  .onTestConnection({
                     mode: draft.connection.mode,
                     baseUrl: draft.connection.baseUrl,
                     model: draft.connection.model,
                     timeoutMs: draft.connection.timeoutMs,
                     ...(apiKey ? { apiKey } : {})
                   })
-                  .then(setConnectionResult)
+                  .then((result) => {
+                    setConnectionResult(result)
+                    setFeedback(result.ok ? 'Tes koneksi selesai.' : result.message)
+                  })
+                  .catch((error: unknown) => {
+                    setFeedback(error instanceof Error ? error.message : 'Tes koneksi gagal.')
+                  })
                   .finally(() => setBusy(false))
               }}
             >
@@ -258,11 +285,16 @@ export function SettingsPanel(props: Props): React.JSX.Element {
               <p className="connection-result" data-ok={connectionResult.ok}>
                 {connectionResult.ok ? <Check size={15} aria-hidden="true" /> : null}
                 <span>
-                  {connectionResult.message}
+                  Hasil tes manual: {connectionResult.message}
                   {connectionResult.warning ? <small>{connectionResult.warning}</small> : null}
                 </span>
               </p>
             ) : null}
+            <HermesDiagnosticsPanel
+              status={props.hermes.state}
+              message={props.hermes.message}
+              diagnostics={props.hermes.diagnostics}
+            />
           </SettingsSection>
         ) : null}
 
@@ -737,7 +769,7 @@ export function SettingsPanel(props: Props): React.JSX.Element {
         ) : null}
 
         {section === 'about' ? (
-          <SettingsSection title="Tentang Yachiyo" description="Personal local build · versi 0.2.0">
+          <SettingsSection title="Tentang Yachiyo" description="Personal local build · versi 0.2.1">
             <div className="about-copy">
               <p>
                 Yachiyo Companion adalah lapisan desktop untuk Hermes Agent. Hermes tetap menjadi
@@ -780,6 +812,72 @@ export function SettingsPanel(props: Props): React.JSX.Element {
         </button>
       </footer>
     </section>
+  )
+}
+
+function HermesDiagnosticsPanel({
+  status,
+  message,
+  diagnostics
+}: {
+  status: HermesConnectionState
+  message: string
+  diagnostics: HermesConnectionDiagnostics
+}): React.JSX.Element {
+  const checkedAt = diagnostics.checkedAt
+    ? new Date(diagnostics.checkedAt).toLocaleString('id-ID')
+    : 'Belum diperiksa'
+  return (
+    <div className="hermes-diagnostics" aria-label="Diagnostik koneksi Hermes">
+      <strong>Diagnostik aman</strong>
+      <dl>
+        <div>
+          <dt>Status</dt>
+          <dd>{status}</dd>
+        </div>
+        <div>
+          <dt>Pesan</dt>
+          <dd>{message}</dd>
+        </div>
+        <div>
+          <dt>Mode</dt>
+          <dd>{diagnostics.mode}</dd>
+        </div>
+        <div>
+          <dt>Base URL</dt>
+          <dd>{diagnostics.normalizedBaseUrl ?? '-'}</dd>
+        </div>
+        <div>
+          <dt>Endpoint aktif</dt>
+          <dd>{diagnostics.activeEndpoint ?? diagnostics.chatEndpoint ?? '-'}</dd>
+        </div>
+        <div>
+          <dt>Model</dt>
+          <dd>{diagnostics.selectedModel || '-'}</dd>
+        </div>
+        <div>
+          <dt>HTTP</dt>
+          <dd>{diagnostics.httpStatus ?? '-'}</dd>
+        </div>
+        <div>
+          <dt>Kategori</dt>
+          <dd>{diagnostics.errorCategory}</dd>
+        </div>
+        <div>
+          <dt>Timeout</dt>
+          <dd>{Math.round(diagnostics.timeoutMs / 1_000)} detik</dd>
+        </div>
+        <div>
+          <dt>Ringkasan respons</dt>
+          <dd>{diagnostics.responseSummary ?? '-'}</dd>
+        </div>
+        <div>
+          <dt>Pemeriksaan terakhir</dt>
+          <dd>{checkedAt}</dd>
+        </div>
+      </dl>
+      <small>API key, header Authorization, dan isi percakapan tidak ditampilkan.</small>
+    </div>
   )
 }
 

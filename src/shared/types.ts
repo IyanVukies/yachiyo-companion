@@ -163,9 +163,56 @@ export type VoicePlaybackSummary = {
   metrics: VoiceMetrics | null
 }
 
+export type HermesConnectionState =
+  | 'mock'
+  | 'idle'
+  | 'checking'
+  | 'online'
+  | 'offline'
+  | 'authentication-error'
+  | 'timeout'
+  | 'server-error'
+  | 'response-error'
+
+export type HermesErrorCategory =
+  | 'none'
+  | 'invalid-url'
+  | 'authentication'
+  | 'connection'
+  | 'timeout'
+  | 'server'
+  | 'rate-limit'
+  | 'model'
+  | 'response'
+  | 'stream'
+
+export type HermesDiagnosticPhase = 'idle' | 'models' | 'chat-test' | 'chat-runtime'
+
+export type HermesConnectionDiagnostics = {
+  mode: 'mock' | 'hermes'
+  phase: HermesDiagnosticPhase
+  normalizedBaseUrl: string | null
+  modelsEndpoint: string | null
+  chatEndpoint: string | null
+  activeEndpoint: string | null
+  selectedModel: string
+  httpStatus: number | null
+  errorCategory: HermesErrorCategory
+  timeoutMs: number
+  responseSummary: string | null
+  checkedAt: string | null
+}
+
+export type HermesConnectionStatus = {
+  state: HermesConnectionState
+  message: string
+  diagnostics: HermesConnectionDiagnostics
+}
+
 export type AppStatus = {
   version: string
-  connection: 'mock' | 'connected' | 'connecting' | 'offline' | 'auth-error'
+  connection: HermesConnectionState
+  hermes: HermesConnectionStatus
   mockServerReady: boolean
   trayReady: boolean
   clickThrough: boolean
@@ -203,6 +250,8 @@ export type NormalizedError = {
     | 'TIMEOUT'
     | 'OFFLINE'
     | 'SERVER'
+    | 'MODEL'
+    | 'MALFORMED_RESPONSE'
     | 'MALFORMED_STREAM'
     | 'VALIDATION'
     | 'UNKNOWN'
@@ -212,6 +261,10 @@ export type NormalizedError = {
   availableFeatures: string[]
   nextAction: string
   retryable: boolean
+  category: HermesErrorCategory
+  httpStatus: number | null
+  endpoint: string | null
+  responseSummary: string | null
 }
 
 export type Reminder = {
@@ -254,10 +307,11 @@ export type VoiceResult = {
 
 export type ConnectionTestResult = {
   ok: boolean
-  status: 'connected' | 'auth-error' | 'offline' | 'invalid' | 'timeout'
+  status: HermesConnectionState
   message: string
   model: string | null
   warning: string | null
+  diagnostics: HermesConnectionDiagnostics
 }
 
 export type AssetSelectionRequest = z.infer<typeof assetSelectionRequestSchema>

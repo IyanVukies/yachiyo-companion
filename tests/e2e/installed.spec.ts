@@ -14,7 +14,7 @@ const projectRoot = resolve(import.meta.dirname, '../..')
 const installedExecutable = resolve(projectRoot, 'output/installed-smoke/Yachiyo Companion.exe')
 const screenshots = resolve(projectRoot, 'docs/screenshots')
 
-test('installed 0.2.0 converts and plays Kobo RVC while Mao ParamA is active', async ({
+test('installed 0.2.1 converts and plays Kobo RVC while Mao ParamA is active', async ({
   browserName
 }, testInfo) => {
   test.setTimeout(600_000)
@@ -32,7 +32,7 @@ test('installed 0.2.0 converts and plays Kobo RVC while Mao ParamA is active', a
 
   try {
     expect(await application.evaluate(({ app }) => app.isPackaged)).toBe(true)
-    expect(await application.evaluate(({ app }) => app.getVersion())).toBe('0.2.0')
+    expect(await application.evaluate(({ app }) => app.getVersion())).toBe('0.2.1')
     expect(await application.evaluate(({ app }) => app.getPath('userData'))).toBe(dataDirectory)
     const page = await application.firstWindow()
     await page.getByRole('button', { name: 'Lanjut' }).click()

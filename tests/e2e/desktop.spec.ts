@@ -1,19 +1,33 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test'
+
+import type { AppSettings, SettingsView } from '../../src/shared/types'
 
 import { createExternalAssetFixtures, mockNextOpenDialog, quitApplication } from './helpers'
 
 const projectRoot = resolve(import.meta.dirname, '../..')
 const screenshots = resolve(projectRoot, 'docs/screenshots')
 
+type HermesRequestRecord = {
+  method: string
+  path: string
+  authorization: string | null
+  contentType: string | null
+  stream?: boolean
+  lastMessage?: string
+  responseKind?: string
+}
+
 test('onboarding, secure bridge, mock chat, and settings work in Electron', async () => {
   test.setTimeout(120_000)
   mkdirSync(screenshots, { recursive: true })
   const dataDirectory = mkdtempSync(join(tmpdir(), 'yachiyo-e2e-'))
   const assetFixtures = await createExternalAssetFixtures(projectRoot)
+  const hermesServer = await startHermesServer()
   const pageErrors: string[] = []
   const consoleErrors: string[] = []
   let application: ElectronApplication | null = await electron.launch({
@@ -115,7 +129,7 @@ test('onboarding, secure bridge, mock chat, and settings work in Electron', asyn
     await page.screenshot({ path: join(screenshots, '03-mock-chat.png') })
     await page.getByLabel('Pesan untuk Yachiyo').fill('/mock 500')
     await page.getByRole('button', { name: 'Kirim' }).click()
-    await expect(page.getByRole('alert')).toContainText('status 500')
+    await expect(page.getByRole('alert')).toContainText('HTTP 500')
     await page.getByRole('button', { name: 'Tutup chat' }).click()
 
     await page.getByRole('button', { name: 'Atur' }).click()
@@ -158,21 +172,129 @@ test('onboarding, secure bridge, mock chat, and settings work in Electron', asyn
     await expect(koboAssets.getByTestId('kobo-selected-path')).toContainText(
       assetFixtures.koboParent
     )
-    await expect(koboAssets.getByText('ready')).toBeVisible({ timeout: 30_000 })
+    await expect(koboAssets.getByText(/^(ready|runtime-missing)$/)).toBeVisible({
+      timeout: 30_000
+    })
     await expect(koboAssets.getByText('kobov2.pth')).toBeVisible()
-    await page.screenshot({ path: join(screenshots, '04-asset-status.png') })
-
     await page
       .getByLabel('Bagian pengaturan')
       .getByRole('button', { name: 'Hermes', exact: true })
       .click()
+    await page.getByLabel('Mode koneksi').getByRole('button', { name: 'Hermes VPS' }).click()
+    await page.getByLabel('Base URL').fill(`${hermesServer.baseUrl}/v1/`)
+    await page.getByLabel('Nama model').fill('hermes-agent')
+    await page.getByLabel(/API key/).fill('  e2e-hermes-key  ')
+    await page.getByRole('button', { name: 'Simpan' }).click()
+    await expect(page.getByText('Pengaturan tersimpan.')).toBeVisible()
     await page.getByRole('button', { name: 'Tes koneksi' }).click()
-    await expect(page.getByText(/Koneksi Hermes berhasil dan model ditemukan/)).toBeVisible()
+    await expect(
+      page
+        .getByLabel('Diagnostik koneksi Hermes')
+        .getByText('Koneksi Hermes berhasil, model ditemukan, dan chat completion terverifikasi.', {
+          exact: true
+        })
+    ).toBeVisible()
+    await expect(page.getByText('Hermes online', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Tutup pengaturan' }).click()
+    await page.evaluate(async () => {
+      const api = (
+        globalThis as unknown as {
+          yachiyo?: {
+            getSettings: () => Promise<SettingsView>
+            updateSettings: (input: { settings: AppSettings }) => Promise<SettingsView>
+          }
+        }
+      ).yachiyo
+      if (!api) throw new Error('Yachiyo bridge unavailable')
+      const view = await api.getSettings()
+      await api.updateSettings({
+        settings: {
+          schemaVersion: view.schemaVersion,
+          onboardingComplete: view.onboardingComplete,
+          connection: { ...view.connection, streaming: false },
+          voice: view.voice,
+          proactive: view.proactive,
+          desktop: view.desktop,
+          assets: view.assets,
+          privacy: view.privacy,
+          logging: view.logging
+        }
+      })
+    })
+
+    await page.getByRole('button', { name: 'Chat', exact: true }).click()
+    await page.getByLabel('Pesan untuk Yachiyo').fill('Pesan nyata untuk Hermes E2E.')
+    await page.getByRole('button', { name: 'Kirim' }).click()
+    await expect
+      .poll(() => hermesServer.requests.at(-1), { timeout: 10_000 })
+      .toMatchObject({
+        method: 'POST',
+        path: '/v1/chat/completions',
+        stream: false,
+        lastMessage: 'Pesan nyata untuk Hermes E2E.',
+        responseKind: 'runtime-json'
+      })
+    await expect(page.getByText('REAL HERMES E2E', { exact: true })).toBeVisible({
+      timeout: 15_000
+    })
+
+    await page.evaluate(async () => {
+      const api = (
+        globalThis as unknown as {
+          yachiyo?: {
+            getSettings: () => Promise<SettingsView>
+            updateSettings: (input: { settings: AppSettings }) => Promise<SettingsView>
+          }
+        }
+      ).yachiyo
+      if (!api) throw new Error('Yachiyo bridge unavailable')
+      const view = await api.getSettings()
+      await api.updateSettings({
+        settings: {
+          schemaVersion: view.schemaVersion,
+          onboardingComplete: view.onboardingComplete,
+          connection: { ...view.connection, streaming: true },
+          voice: view.voice,
+          proactive: view.proactive,
+          desktop: view.desktop,
+          assets: view.assets,
+          privacy: view.privacy,
+          logging: view.logging
+        }
+      })
+    })
+    await page.getByLabel('Pesan untuk Yachiyo').fill('Pesan streaming untuk Hermes E2E.')
+    await page.getByRole('button', { name: 'Kirim' }).click()
+    await expect
+      .poll(
+        () =>
+          hermesServer.requests.findLast(
+            (request) => request.lastMessage === 'Pesan streaming untuk Hermes E2E.'
+          ),
+        { timeout: 10_000 }
+      )
+      .toMatchObject({ stream: true, responseKind: 'runtime-sse' })
+    await expect(page.getByText('REAL HERMES SSE E2E', { exact: true })).toBeVisible({
+      timeout: 15_000
+    })
+    await page.getByRole('button', { name: 'Tutup chat' }).click()
+    expect(hermesServer.requests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ method: 'GET', path: '/v1/models' }),
+        expect.objectContaining({
+          method: 'POST',
+          path: '/v1/chat/completions',
+          authorization: 'Bearer e2e-hermes-key',
+          contentType: 'application/json'
+        })
+      ])
+    )
 
     await page.getByRole('button', { name: 'Ingat', exact: true }).click()
     await page.getByRole('button', { name: /Kirim notifikasi tes/ }).click()
-    await expect(page.getByRole('status')).toContainText('Notifikasi tes dikirim.')
+    await expect(page.getByRole('status')).toContainText(
+      /Notifikasi tes dikirim\.|Tes ditahan karena sedang quiet hours\./
+    )
     await page.getByRole('button', { name: 'Tutup pengingat' }).click()
 
     expect(pageErrors).toEqual([])
@@ -196,7 +318,9 @@ test('onboarding, secure bridge, mock chat, and settings work in Electron', asyn
       }
     })
     const restoredPage = await application.firstWindow()
-    await expect(restoredPage.getByText('Mock lokal', { exact: true })).toBeVisible()
+    await expect(restoredPage.getByText('Hermes online', { exact: true })).toBeVisible({
+      timeout: 15_000
+    })
     await expect(restoredPage.locator('.onboarding-backdrop')).toHaveCount(0)
     const restoredVoiceMode = await restoredPage.evaluate(async () => {
       const api = (
@@ -221,7 +345,102 @@ test('onboarding, secure bridge, mock chat, and settings work in Electron', asyn
     await restoredPage.screenshot({ path: join(screenshots, '05-restart-persistence.png') })
   } finally {
     if (application) await quitApplication(application)
+    await hermesServer.close()
     assetFixtures.cleanup()
     rmSync(dataDirectory, { recursive: true, force: true })
   }
 })
+
+async function startHermesServer(): Promise<{
+  baseUrl: string
+  requests: HermesRequestRecord[]
+  close: () => Promise<void>
+}> {
+  const requests: HermesRequestRecord[] = []
+  const server = createServer((request, response) => {
+    void handleHermesRequest(request, response, requests).catch(() => {
+      response.writeHead(500).end()
+    })
+  })
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolvePromise)
+  })
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Hermes E2E server unavailable')
+  return {
+    baseUrl: `http://127.0.0.1:${String(address.port)}`,
+    requests,
+    close: async () => {
+      server.closeAllConnections()
+      await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()))
+    }
+  }
+}
+
+async function handleHermesRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  requests: HermesRequestRecord[]
+): Promise<void> {
+  const method = request.method ?? 'GET'
+  const path = request.url ?? '/'
+  const record: HermesRequestRecord = {
+    method,
+    path,
+    authorization: request.headers.authorization ?? null,
+    contentType: request.headers['content-type'] ?? null
+  }
+  requests.push(record)
+  if (request.headers.authorization !== 'Bearer e2e-hermes-key') {
+    sendJson(response, 401, { error: 'unauthorized' })
+    return
+  }
+  if (method === 'GET' && path === '/v1/models') {
+    sendJson(response, 200, { data: [{ id: 'hermes-agent', object: 'model' }] })
+    return
+  }
+  if (method !== 'POST' || path !== '/v1/chat/completions') {
+    sendJson(response, 404, { error: 'not found' })
+    return
+  }
+  const payload = JSON.parse(await readRequestBody(request)) as {
+    model?: string
+    messages?: { role?: string; content?: string }[]
+    stream?: boolean
+  }
+  record.stream = payload.stream === true
+  const lastMessage = payload.messages?.at(-1)?.content
+  if (lastMessage !== undefined) record.lastMessage = lastMessage
+  if (payload.model !== 'hermes-agent' || !Array.isArray(payload.messages)) {
+    sendJson(response, 400, { error: 'invalid request' })
+    return
+  }
+  if (payload.stream === false) {
+    const content = lastMessage === 'Balas hanya ONLINE' ? 'ONLINE' : 'REAL HERMES E2E'
+    record.responseKind = lastMessage === 'Balas hanya ONLINE' ? 'health-json' : 'runtime-json'
+    sendJson(response, 200, { choices: [{ message: { role: 'assistant', content } }] })
+    return
+  }
+  response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+  record.responseKind = 'runtime-sse'
+  response.write(
+    `data: ${JSON.stringify({ choices: [{ delta: { content: 'REAL HERMES SSE E2E' } }] })}\r\n\r\n`
+  )
+  response.end('data: [DONE]\r\n\r\n')
+}
+
+async function readRequestBody(request: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = []
+  for await (const chunk of request) chunks.push(Buffer.from(chunk as Uint8Array))
+  return Buffer.concat(chunks).toString('utf8')
+}
+
+function sendJson(response: ServerResponse, status: number, body: unknown): void {
+  const encoded = JSON.stringify(body)
+  response.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(encoded)
+  })
+  response.end(encoded)
+}

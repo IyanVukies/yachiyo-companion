@@ -50,7 +50,12 @@ describe('Hermes OpenAI-compatible integration', () => {
       (delta) => deltas.push(delta)
     )
 
-    expect(check).toMatchObject({ ok: true, status: 'connected', model: 'yachiyo-mock' })
+    expect(check).toMatchObject({ ok: true, status: 'online', model: 'yachiyo-mock' })
+    expect(check.diagnostics).toMatchObject({
+      phase: 'chat-test',
+      httpStatus: 200,
+      errorCategory: 'none'
+    })
     expect(deltas.length).toBeGreaterThan(2)
     expect(result.displayText).toContain('halo dari pengujian')
   })
@@ -94,7 +99,7 @@ describe('Hermes OpenAI-compatible integration', () => {
   it('reports a rejected key without exposing it', async () => {
     const result = await new HermesClient().test({ ...fullConfig(), apiKey: 'wrong-key' })
 
-    expect(result).toMatchObject({ ok: false, status: 'auth-error' })
+    expect(result).toMatchObject({ ok: false, status: 'authentication-error' })
     expect(JSON.stringify(result)).not.toContain('wrong-key')
   })
 })

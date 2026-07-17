@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.1 - 2026-07-17
+
+Hermes VPS integration reliability release.
+
+### Root cause
+
+- Connection testing stopped after `GET /models`, so it could report success without proving the selected model could complete a chat request.
+- The home badge used a separate in-memory status that was reset on Save and was not rechecked at startup; a successful test therefore did not reliably update the visible runtime state.
+- A failed chat left an empty assistant placeholder in history. The next request was rejected by IPC validation before it could reach Hermes.
+- Endpoint construction, SSE deadlines, and parser failures were handled on separate paths, which made URL, authentication, connection, model, response, and streaming failures hard to distinguish.
+
+### Fixed
+
+- Unified OpenAI-compatible Hermes endpoint normalization for base URLs with or without `/v1` and trailing slashes, and consistently trims raw API keys before adding one `Bearer` prefix.
+- Applies an atomic saved-settings/key snapshot to every runtime chat, reconnects at startup, and synchronizes explicit connection states with the renderer without deleting configuration when the SSH tunnel is unavailable.
+- Binds encrypted credentials to their normalized destination so a concurrent Save or interrupted write cannot send a key to a different endpoint.
+- Strengthened connection testing to verify both `/v1/models` and a non-streaming `/v1/chat/completions` response, including the selected model and non-empty assistant content.
+- Hardened SSE parsing, full-body timeout/cancellation, bounded response sizes, one-time non-stream fallback, safe retries, and distinct model/response/stream error categories.
+- Added safe live diagnostics, provider markers without prompts or credentials, and Electron/UI/HTTP regression coverage through restart and automatic reconnect.
+
 ## 0.2.0 — 2026-07-17
 
 Kobo RVC v2 inference release.

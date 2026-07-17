@@ -8,6 +8,7 @@ import type {
   ChatEvent,
   ConnectionTestResult,
   DiagnosticReport,
+  HermesConnectionStatus,
   OperationResult,
   ProactiveEvent,
   SettingsView,
@@ -26,6 +27,7 @@ export const IPC = {
   assetsApplySelection: 'assets:apply-selection',
   assetsOpenFolder: 'assets:open-folder',
   hermesTest: 'hermes:test',
+  hermesStatus: 'hermes:status',
   chatStart: 'chat:start',
   chatCancel: 'chat:cancel',
   chatEvent: 'chat:event',
@@ -67,6 +69,7 @@ export type YachiyoApi = {
     timeoutMs: number
     apiKey?: string
   }) => Promise<ConnectionTestResult>
+  onHermesStatus: (callback: (status: HermesConnectionStatus) => void) => () => void
   startChat: (payload: {
     requestId: string
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
