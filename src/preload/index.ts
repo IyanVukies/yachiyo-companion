@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import { IPC, type YachiyoApi } from '../shared/ipc'
-import type { ChatEvent, HermesConnectionStatus, ProactiveEvent } from '../shared/types'
+import type { AppCommand, ChatEvent, HermesConnectionStatus, ProactiveEvent } from '../shared/types'
 
 const api: YachiyoApi = {
   getAppStatus: () => ipcRenderer.invoke(IPC.appStatus),
@@ -24,8 +24,12 @@ const api: YachiyoApi = {
   stopVoice: () => ipcRenderer.invoke(IPC.voiceStop),
   setClickThrough: (enabled) => ipcRenderer.invoke(IPC.windowClickThrough, enabled),
   setAlwaysOnTop: (enabled) => ipcRenderer.invoke(IPC.windowAlwaysOnTop, enabled),
+  minimizeWindow: () => ipcRenderer.invoke(IPC.windowMinimize),
+  closeWindow: () => ipcRenderer.invoke(IPC.windowClose),
   hideWindow: () => ipcRenderer.invoke(IPC.windowHide),
   resetWindowPosition: () => ipcRenderer.invoke(IPC.windowResetPosition),
+  setPresentationMode: (mode) => ipcRenderer.invoke(IPC.windowPresentationMode, mode),
+  setLauncherStatus: (status) => ipcRenderer.invoke(IPC.launcherStatus, status),
   sendTestReminder: () => ipcRenderer.invoke(IPC.proactiveTest),
   listReminders: () => ipcRenderer.invoke(IPC.proactiveList),
   scheduleReminder: (payload) => ipcRenderer.invoke(IPC.proactiveSchedule, payload),
@@ -59,13 +63,9 @@ function subscribeProactive(callback: (payload: ProactiveEvent) => void): () => 
   return () => ipcRenderer.removeListener(IPC.proactiveEvent, listener)
 }
 
-function subscribeCommand(
-  callback: (payload: 'chat' | 'settings' | 'reminders') => void
-): () => void {
-  const listener = (
-    _event: Electron.IpcRendererEvent,
-    payload: 'chat' | 'settings' | 'reminders'
-  ): void => callback(payload)
+function subscribeCommand(callback: (payload: AppCommand) => void): () => void {
+  const listener = (_event: Electron.IpcRendererEvent, payload: AppCommand): void =>
+    callback(payload)
   ipcRenderer.on(IPC.appCommand, listener)
   return () => ipcRenderer.removeListener(IPC.appCommand, listener)
 }

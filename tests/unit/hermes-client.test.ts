@@ -260,6 +260,101 @@ describe('Hermes runtime response handling', () => {
     expect(result).toMatchObject({ displayText: 'ONLINE', transport: 'sse' })
   })
 
+  it('withholds a yachiyo control envelope whose closing tag is split across SSE content chunks', async () => {
+    handler = async (request, response) => {
+      await readBody(request)
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      const contentChunks = [
+        'Jawaban dari Hermes.',
+        '<yachi',
+        'yo_control>{"emotion":"happy","motion":"nod","importance":"normal",',
+        '"requires_response":false,"command":"ignored"}</yachiyo_',
+        'control>'
+      ]
+      for (const content of contentChunks) {
+        response.write(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`)
+      }
+      response.end('data: [DONE]\n\n')
+    }
+
+    const deltas: string[] = []
+    const result = await new HermesClient().stream(
+      config(),
+      [{ role: 'user', content: 'hello' }],
+      new AbortController().signal,
+      (delta) => deltas.push(delta)
+    )
+
+    expect(deltas).toEqual(['Jawaban dari Hermes.'])
+    expect(deltas.join('')).not.toContain('yachiyo_control')
+    expect(result).toMatchObject({
+      displayText: 'Jawaban dari Hermes.',
+      metadata: {
+        emotion: 'happy',
+        motion: 'nod',
+        importance: 'normal',
+        requiresResponse: false
+      },
+      transport: 'sse'
+    })
+    expect(JSON.stringify(result.metadata)).not.toContain('command')
+  })
+
+  it('sanitizes yachiyo control envelopes in non-streaming completions', async () => {
+    handler = async (request, response) => {
+      await readBody(request)
+      json(
+        response,
+        200,
+        completion(
+          'Jawaban tetap terlihat.<yachiyo_control>{"emotion":"concerned"}</yachiyo_control>'
+        )
+      )
+    }
+
+    const deltas: string[] = []
+    const result = await new HermesClient().stream(
+      { ...config(), streaming: false },
+      [{ role: 'user', content: 'hello' }],
+      new AbortController().signal,
+      (delta) => deltas.push(delta)
+    )
+
+    expect(deltas).toEqual(['Jawaban tetap terlihat.'])
+    expect(result.displayText).toBe('Jawaban tetap terlihat.')
+    expect(result.metadata).toEqual({ emotion: 'concerned' })
+  })
+
+  it('keeps error partial text clean when a stream fails inside an envelope', async () => {
+    handler = async (request, response) => {
+      await readBody(request)
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      response.write(
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'Jawaban parsial.' } }] })}\n\n`
+      )
+      response.write(
+        `data: ${JSON.stringify({ choices: [{ delta: { content: '<yachiyo_control>{"emotion":"happy"}' } }] })}\n\n`
+      )
+      response.end('data: {broken}\n\n')
+    }
+
+    const deltas: string[] = []
+    const pending = new HermesClient().stream(
+      config(),
+      [{ role: 'user', content: 'hello' }],
+      new AbortController().signal,
+      (delta) => deltas.push(delta)
+    )
+
+    await expect(pending).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof HermesRequestError &&
+        error.normalized.code === 'MALFORMED_STREAM' &&
+        error.partialText === 'Jawaban parsial.'
+    )
+    expect(deltas).toEqual(['Jawaban parsial.'])
+  })
+
   it('falls back once to non-streaming when SSE parsing fails before any delta', async () => {
     const streamFlags: boolean[] = []
     handler = async (request, response) => {

@@ -20,6 +20,8 @@ import {
   booleanSchema,
   chatStartSchema,
   connectionTestSchema,
+  launcherStatusSchema,
+  presentationModeSchema,
   reminderActionSchema,
   reminderScheduleSchema,
   requestIdSchema,
@@ -37,6 +39,7 @@ import type {
   ChatEvent,
   DiagnosticReport,
   HermesConnectionStatus,
+  LauncherStatus,
   NormalizedError,
   OperationResult
 } from '../../shared/types'
@@ -55,6 +58,7 @@ import type { ProactiveService } from '../services/proactive-service'
 import type { SecretVault } from '../services/secret-vault'
 import type { SettingsStore } from '../services/settings-store'
 import type { VoiceSidecar } from '../services/voice-sidecar'
+import { sanitizeYachiyoVisibleText } from '../services/yachiyo-control-parser'
 import type { TrayController } from '../tray/tray-controller'
 import type { DesktopWindowController } from '../windows/desktop-window'
 
@@ -71,6 +75,9 @@ type Context = {
   assetValidator: AssetValidator
   proactiveService: ProactiveService
   logger: AppLogger
+  applyDesktopSettings: () => void
+  applyGlobalShortcut: () => boolean
+  setLauncherStatus: (status: LauncherStatus) => void
   getAssetStatus: () => AssetStatus
   setAssetStatus: (status: AssetStatus) => void
 }
@@ -126,7 +133,19 @@ export function registerIpc(context: Context): () => void {
     ) {
       throw new Error('Path aset hanya dapat diubah melalui dialog pemilihan aset.')
     }
-    const settings = normalizeConnectionSettings(payload.settings)
+    const normalizedSettings = normalizeConnectionSettings(payload.settings)
+    const settings: Settings = {
+      ...normalizedSettings,
+      desktop: {
+        ...normalizedSettings.desktop,
+        windowBounds: before.desktop.windowBounds,
+        lastPresentationMode: before.desktop.lastPresentationMode,
+        launcher: {
+          ...normalizedSettings.desktop.launcher,
+          position: before.desktop.launcher.position
+        }
+      }
+    }
     const explicitKey =
       payload.apiKey === undefined ? undefined : normalizeHermesApiKey(payload.apiKey)
     const destinationChanged =
@@ -145,9 +164,18 @@ export function registerIpc(context: Context): () => void {
         errorType: 'runtime-refresh'
       })
     })
+    if (
+      before.desktop.globalShortcut !== view.desktop.globalShortcut &&
+      !context.applyGlobalShortcut()
+    ) {
+      await context.settingsStore.updateDesktop({
+        globalShortcut: before.desktop.globalShortcut
+      })
+      context.applyGlobalShortcut()
+      throw new Error('Shortcut global tidak tersedia. Shortcut sebelumnya tetap digunakan.')
+    }
     app.setLoginItemSettings({ openAtLogin: view.desktop.autoStart })
-    await context.windowController.setAlwaysOnTop(view.desktop.alwaysOnTop)
-    await context.windowController.setClickThrough(view.desktop.clickThrough)
+    context.applyDesktopSettings()
     context.logger.setLevel(view.logging.level)
     context.trayController.rebuildMenu()
 
@@ -157,8 +185,8 @@ export function registerIpc(context: Context): () => void {
   handle(IPC.settingsReset, context, async () => {
     const view = await context.settingsStore.reset()
     app.setLoginItemSettings({ openAtLogin: false })
-    await context.windowController.setAlwaysOnTop(view.desktop.alwaysOnTop)
-    await context.windowController.setClickThrough(false)
+    context.applyDesktopSettings()
+    context.applyGlobalShortcut()
     await context.windowController.resetPosition()
     context.trayController.rebuildMenu()
     const assets = await context.assetValidator.scan(view.assets)
@@ -304,6 +332,12 @@ export function registerIpc(context: Context): () => void {
 
   handle(IPC.chatStart, context, (_event, input: unknown): OperationResult => {
     const payload = chatStartSchema.parse(input)
+    const safeMessages = payload.messages
+      .map((message) => ({ ...message, content: sanitizeYachiyoVisibleText(message.content) }))
+      .filter((message) => message.content.trim())
+    if (!safeMessages.length) {
+      return { ok: false, message: 'Pesan tidak memiliki konten percakapan yang dapat dikirim.' }
+    }
     if (controllers.has(payload.requestId)) {
       return { ok: false, message: 'Permintaan chat ini sudah berjalan.' }
     }
@@ -318,7 +352,7 @@ export function registerIpc(context: Context): () => void {
     void (async () => {
       let partialText = ''
       try {
-        const result = await hermesRuntime.stream(payload.messages, controller.signal, (text) => {
+        const result = await hermesRuntime.stream(safeMessages, controller.signal, (text) => {
           partialText += text
           sendChatEvent(webContents, context.logger, {
             type: 'delta',
@@ -336,14 +370,14 @@ export function registerIpc(context: Context): () => void {
         sendChatEvent(webContents, context.logger, {
           type: 'done',
           requestId: payload.requestId,
-          text: result.displayText
+          text: sanitizeYachiyoVisibleText(result.displayText)
         })
       } catch (error) {
         if (controller.signal.aborted) {
           sendChatEvent(webContents, context.logger, {
             type: 'cancelled',
             requestId: payload.requestId,
-            partialText
+            partialText: sanitizeYachiyoVisibleText(partialText)
           })
         } else {
           const requestError =
@@ -354,7 +388,7 @@ export function registerIpc(context: Context): () => void {
             type: 'error',
             requestId: payload.requestId,
             error: requestError.normalized,
-            partialText: requestError.partialText || partialText
+            partialText: sanitizeYachiyoVisibleText(partialText || requestError.partialText)
           })
         }
       } finally {
@@ -384,7 +418,9 @@ export function registerIpc(context: Context): () => void {
   })
   handle(IPC.voiceSynthesize, context, (_event, input: unknown) => {
     const request = voiceRequestSchema.parse(input)
-    return context.voiceSidecar.synthesize(request)
+    const text = sanitizeYachiyoVisibleText(request.text).trim()
+    if (!text) throw new Error('Teks suara tidak memiliki konten yang dapat diucapkan.')
+    return context.voiceSidecar.synthesize({ ...request, text })
   })
   handle(IPC.voicePlaybackReport, context, (_event, input: unknown): OperationResult => {
     const report = voicePlaybackReportSchema.parse(input)
@@ -413,14 +449,31 @@ export function registerIpc(context: Context): () => void {
       return { ok: true, message: 'Pengaturan selalu di atas diperbarui.' }
     }
   )
+  handle(IPC.windowMinimize, context, (): OperationResult => {
+    context.windowController.minimize()
+    return { ok: true, message: 'Yachiyo diminimalkan sesuai pengaturan desktop.' }
+  })
+  handle(IPC.windowClose, context, (): OperationResult => {
+    context.windowController.browserWindow?.close()
+    return { ok: true, message: 'Perilaku tombol tutup dijalankan.' }
+  })
   handle(IPC.windowHide, context, (): OperationResult => {
     context.windowController.hide()
-    return { ok: true, message: 'Yachiyo disembunyikan ke tray.' }
+    return { ok: true, message: 'Yachiyo disembunyikan sesuai pengaturan desktop.' }
   })
   handle(IPC.windowResetPosition, context, async (): Promise<OperationResult> => {
     await context.windowController.resetPosition()
     context.windowController.show()
     return { ok: true, message: 'Posisi jendela dipulihkan.' }
+  })
+  handle(IPC.windowPresentationMode, context, async (_event, input: unknown) => {
+    const mode = presentationModeSchema.parse(input)
+    await context.settingsStore.updateDesktop({ lastPresentationMode: mode })
+    return { ok: true, message: 'Mode presentasi terakhir disimpan.' } satisfies OperationResult
+  })
+  handle(IPC.launcherStatus, context, (_event, input: unknown): OperationResult => {
+    context.setLauncherStatus(launcherStatusSchema.parse(input))
+    return { ok: true, message: 'Status launcher diperbarui.' }
   })
 
   handle(IPC.proactiveTest, context, () => context.proactiveService.manualTest())
@@ -451,7 +504,7 @@ export function registerIpc(context: Context): () => void {
     return { result: { ok: true, message: 'Diagnostik aman tersimpan.' }, report }
   })
   handle(IPC.clipboardWrite, context, (_event, input: unknown): OperationResult => {
-    clipboard.writeText(z.string().max(100_000).parse(input))
+    clipboard.writeText(sanitizeYachiyoVisibleText(z.string().max(100_000).parse(input)))
     return { ok: true, message: 'Teks disalin.' }
   })
 

@@ -7,6 +7,7 @@ import {
   FileArchive,
   KeyRound,
   MonitorUp,
+  Move,
   RefreshCw,
   RotateCcw,
   Save,
@@ -20,6 +21,7 @@ import type {
   AssetDialogResult,
   AssetSelectionRequest,
   AssetStatus,
+  AvatarTransform,
   ConnectionTestResult,
   HermesConnectionDiagnostics,
   HermesConnectionState,
@@ -27,6 +29,11 @@ import type {
   SettingsView,
   VoiceCapabilities
 } from '@shared/types'
+import {
+  clampAvatarTransform,
+  resetAvatarPosition,
+  resetAvatarTransform
+} from '@shared/avatar-transform'
 
 import { AssetSettings } from './AssetSettings'
 
@@ -51,13 +58,17 @@ type Props = {
   onVoiceTest: (settings: SettingsView, mode: 'basic' | 'rvc') => Promise<void>
   onVoiceRuntimeSetup: () => Promise<VoiceCapabilities>
   onVoiceRefresh: () => Promise<VoiceCapabilities>
+  onAvatarTransformPreview: (transform: AvatarTransform) => void
+  onAvatarEdit: (transform: AvatarTransform) => void
 }
 
-type Section = 'connection' | 'voice' | 'desktop' | 'proactive' | 'assets' | 'privacy' | 'about'
+type Section =
+  'connection' | 'voice' | 'avatar' | 'desktop' | 'proactive' | 'assets' | 'privacy' | 'about'
 
 const SECTIONS: { id: Section; label: string; icon: typeof Bot }[] = [
   { id: 'connection', label: 'Hermes', icon: Bot },
   { id: 'voice', label: 'Suara', icon: Volume2 },
+  { id: 'avatar', label: 'Avatar', icon: Move },
   { id: 'desktop', label: 'Desktop', icon: MonitorUp },
   { id: 'proactive', label: 'Proaktif', icon: Bell },
   { id: 'assets', label: 'Aset', icon: FileArchive },
@@ -108,6 +119,18 @@ export function SettingsPanel(props: Props): React.JSX.Element {
     } finally {
       setBusy(false)
     }
+  }
+
+  const updateAvatarTransform = (patch: Partial<AvatarTransform>): void => {
+    setDraft((current) => {
+      const transform = clampAvatarTransform({ ...avatarTransformFrom(current), ...patch })
+      const next = {
+        ...current,
+        desktop: { ...current.desktop, ...transform }
+      }
+      props.onAvatarTransformPreview(transform)
+      return next
+    })
   }
 
   return (
@@ -538,13 +561,135 @@ export function SettingsPanel(props: Props): React.JSX.Element {
           </SettingsSection>
         ) : null}
 
+        {section === 'avatar' ? (
+          <SettingsSection
+            title="Transform avatar"
+            description="Transform avatar memakai koordinat normalized agar aman saat ukuran jendela berubah."
+          >
+            <div className="desktop-settings-group">
+              <strong>Transform avatar · live preview</strong>
+              <small>Nilai positif menggeser ke kanan atau ke bawah.</small>
+            </div>
+            <label className="range-field labelled">
+              <span>
+                Skala avatar <b>{Math.round(draft.desktop.scale * 100)}%</b>
+              </span>
+              <input
+                aria-label="Skala avatar"
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.05"
+                value={draft.desktop.scale}
+                onChange={(event) => updateAvatarTransform({ scale: Number(event.target.value) })}
+              />
+            </label>
+            <label className="range-field labelled">
+              <span>
+                Posisi horizontal <b>{draft.desktop.positionX.toFixed(2)}</b>
+              </span>
+              <input
+                aria-label="Posisi horizontal avatar"
+                type="range"
+                min="-1"
+                max="1"
+                step="0.02"
+                value={draft.desktop.positionX}
+                onChange={(event) =>
+                  updateAvatarTransform({ positionX: Number(event.target.value) })
+                }
+              />
+            </label>
+            <label className="range-field labelled">
+              <span>
+                Posisi vertikal <b>{draft.desktop.positionY.toFixed(2)}</b>
+              </span>
+              <input
+                aria-label="Posisi vertikal avatar"
+                type="range"
+                min="-1"
+                max="1"
+                step="0.02"
+                value={draft.desktop.positionY}
+                onChange={(event) =>
+                  updateAvatarTransform({ positionY: Number(event.target.value) })
+                }
+              />
+            </label>
+            <Toggle
+              label={
+                draft.desktop.avatarPositionLocked
+                  ? 'Posisi avatar dikunci'
+                  : 'Posisi avatar terbuka'
+              }
+              detail="Buka kunci untuk menyeret avatar langsung pada stage."
+              checked={draft.desktop.avatarPositionLocked}
+              onChange={(avatarPositionLocked) => updateAvatarTransform({ avatarPositionLocked })}
+            />
+            <div className="avatar-transform-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() =>
+                  updateAvatarTransform(resetAvatarPosition(avatarTransformFrom(draft)))
+                }
+              >
+                Reset posisi
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => updateAvatarTransform({ positionX: 0, positionY: 0 })}
+              >
+                Pusatkan avatar
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() =>
+                  updateAvatarTransform(resetAvatarTransform(draft.desktop.avatarPositionLocked))
+                }
+              >
+                Reset semua transform
+              </button>
+            </div>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={draft.desktop.avatarPositionLocked}
+              onClick={() => props.onAvatarEdit(avatarTransformFrom(draft))}
+            >
+              Atur langsung pada stage
+            </button>
+          </SettingsSection>
+        ) : null}
+
         {section === 'desktop' ? (
           <SettingsSection
             title="Perilaku desktop"
-            description="Shortcut pemulihan: Ctrl+Shift+F12."
+            description="Atur lifecycle main window, launcher, shortcut, dan pemulihan posisi."
           >
+            <div className="desktop-settings-group">
+              <strong>Window lifecycle</strong>
+              <small>Shortcut darurat Ctrl+Shift+F12 tetap tersedia untuk memulihkan klik.</small>
+            </div>
+            <label className="field">
+              <span>Shortcut global</span>
+              <input
+                aria-label="Shortcut global"
+                value={draft.desktop.globalShortcut}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    desktop: { ...draft.desktop, globalShortcut: event.target.value }
+                  })
+                }
+                placeholder="Ctrl+Shift+Y"
+              />
+              <small>Default: Ctrl+Shift+Y. Gunakan format accelerator Electron.</small>
+            </label>
             <Toggle
-              label="Selalu di atas"
+              label="Main window selalu di atas"
               checked={draft.desktop.alwaysOnTop}
               onChange={(alwaysOnTop) =>
                 setDraft({ ...draft, desktop: { ...draft.desktop, alwaysOnTop } })
@@ -565,24 +710,160 @@ export function SettingsPanel(props: Props): React.JSX.Element {
                 setDraft({ ...draft, desktop: { ...draft.desktop, autoStart } })
               }
             />
-            <label className="range-field labelled">
-              <span>
-                Skala avatar <b>{Math.round(draft.desktop.scale * 100)}%</b>
-              </span>
-              <input
-                type="range"
-                min="0.65"
-                max="1.5"
-                step="0.05"
-                value={draft.desktop.scale}
+            <label className="field">
+              <span>Perilaku minimize</span>
+              <select
+                aria-label="Perilaku minimize"
+                value={draft.desktop.minimizeBehavior}
                 onChange={(event) =>
                   setDraft({
                     ...draft,
-                    desktop: { ...draft.desktop, scale: Number(event.target.value) }
+                    desktop: {
+                      ...draft.desktop,
+                      minimizeBehavior: event.target
+                        .value as SettingsView['desktop']['minimizeBehavior']
+                    }
+                  })
+                }
+              >
+                <option value="launcher">Tampilkan floating launcher</option>
+                <option value="normal">Minimize normal</option>
+                <option value="tray">Sembunyikan ke system tray</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Perilaku tombol close</span>
+              <select
+                aria-label="Perilaku tombol close"
+                value={draft.desktop.closeBehavior}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    desktop: {
+                      ...draft.desktop,
+                      closeBehavior: event.target.value as SettingsView['desktop']['closeBehavior']
+                    }
+                  })
+                }
+              >
+                <option value="hide">Sembunyikan ke launcher/tray</option>
+                <option value="ask">Tanya sebelum keluar</option>
+                <option value="quit">Keluar dari aplikasi</option>
+              </select>
+            </label>
+            <Toggle
+              label="Ingat posisi jendela"
+              checked={draft.desktop.rememberPosition}
+              onChange={(rememberPosition) =>
+                setDraft({ ...draft, desktop: { ...draft.desktop, rememberPosition } })
+              }
+            />
+            <Toggle
+              label="Ingat ukuran jendela"
+              checked={draft.desktop.rememberSize}
+              onChange={(rememberSize) =>
+                setDraft({ ...draft, desktop: { ...draft.desktop, rememberSize } })
+              }
+            />
+            <Toggle
+              label="Pulihkan presentation mode terakhir"
+              checked={draft.desktop.restorePreviousPresentationMode}
+              onChange={(restorePreviousPresentationMode) =>
+                setDraft({
+                  ...draft,
+                  desktop: { ...draft.desktop, restorePreviousPresentationMode }
+                })
+              }
+            />
+            <Toggle
+              label="Do not disturb saat fullscreen"
+              checked={draft.desktop.doNotDisturb}
+              onChange={(doNotDisturb) =>
+                setDraft({ ...draft, desktop: { ...draft.desktop, doNotDisturb } })
+              }
+            />
+
+            <div className="desktop-settings-group">
+              <strong>Floating launcher</strong>
+              <small>Launcher selalu di atas secara terpisah dari main window.</small>
+            </div>
+            <Toggle
+              label="Aktifkan launcher"
+              checked={draft.desktop.launcher.enabled}
+              onChange={(enabled) =>
+                setDraft({
+                  ...draft,
+                  desktop: {
+                    ...draft.desktop,
+                    launcher: { ...draft.desktop.launcher, enabled }
+                  }
+                })
+              }
+            />
+            <label className="range-field labelled">
+              <span>
+                Ukuran launcher <b>{draft.desktop.launcher.size}px</b>
+              </span>
+              <input
+                aria-label="Ukuran launcher"
+                type="range"
+                min="52"
+                max="72"
+                step="2"
+                value={draft.desktop.launcher.size}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    desktop: {
+                      ...draft.desktop,
+                      launcher: {
+                        ...draft.desktop.launcher,
+                        size: Number(event.target.value)
+                      }
+                    }
                   })
                 }
               />
             </label>
+            <Toggle
+              label="Snap launcher ke tepi"
+              checked={draft.desktop.launcher.snapToEdge}
+              onChange={(snapToEdge) =>
+                setDraft({
+                  ...draft,
+                  desktop: {
+                    ...draft.desktop,
+                    launcher: { ...draft.desktop.launcher, snapToEdge }
+                  }
+                })
+              }
+            />
+            <Toggle
+              label="Auto-hide sebagian di tepi"
+              checked={draft.desktop.launcher.autoHidePartially}
+              onChange={(autoHidePartially) =>
+                setDraft({
+                  ...draft,
+                  desktop: {
+                    ...draft.desktop,
+                    launcher: { ...draft.desktop.launcher, autoHidePartially }
+                  }
+                })
+              }
+            />
+            <Toggle
+              label="Tampilkan indikator status"
+              checked={draft.desktop.launcher.showStatusIndicator}
+              onChange={(showStatusIndicator) =>
+                setDraft({
+                  ...draft,
+                  desktop: {
+                    ...draft.desktop,
+                    launcher: { ...draft.desktop.launcher, showStatusIndicator }
+                  }
+                })
+              }
+            />
             <button
               className="secondary-button"
               type="button"
@@ -769,7 +1050,7 @@ export function SettingsPanel(props: Props): React.JSX.Element {
         ) : null}
 
         {section === 'about' ? (
-          <SettingsSection title="Tentang Yachiyo" description="Personal local build · versi 0.2.1">
+          <SettingsSection title="Tentang Yachiyo" description="Personal local build · versi 0.2.2">
             <div className="about-copy">
               <p>
                 Yachiyo Companion adalah lapisan desktop untuk Hermes Agent. Hermes tetap menjadi
@@ -813,6 +1094,16 @@ export function SettingsPanel(props: Props): React.JSX.Element {
       </footer>
     </section>
   )
+}
+
+function avatarTransformFrom(settings: SettingsView): AvatarTransform {
+  return clampAvatarTransform({
+    scale: settings.desktop.scale,
+    positionX: settings.desktop.positionX,
+    positionY: settings.desktop.positionY,
+    avatarAnchor: settings.desktop.avatarAnchor,
+    avatarPositionLocked: settings.desktop.avatarPositionLocked
+  })
 }
 
 function HermesDiagnosticsPanel({

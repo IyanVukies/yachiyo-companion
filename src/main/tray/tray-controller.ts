@@ -9,7 +9,11 @@ export class TrayController {
   constructor(
     private readonly windowController: DesktopWindowController,
     private readonly settingsStore: SettingsStore,
-    private readonly quit: () => void
+    private readonly actions: {
+      onToggleMute: () => void | Promise<void>
+      isMuted: () => boolean
+      quit: () => void
+    }
   ) {}
 
   create(): void {
@@ -17,7 +21,8 @@ export class TrayController {
     const image = nativeImage.createFromDataURL(svgIcon()).resize({ width: 20, height: 20 })
     this.tray = new Tray(image)
     this.tray.setToolTip('Yachiyo Companion')
-    this.tray.on('click', () => this.windowController.toggleVisibility())
+    this.tray.on('click', () => this.windowController.show())
+    this.tray.on('double-click', () => this.windowController.show())
     this.rebuildMenu()
   }
 
@@ -32,9 +37,23 @@ export class TrayController {
     tray.setContextMenu(
       Menu.buildFromTemplate([
         {
+          label: 'Buka Yachiyo',
+          click: () => this.windowController.show()
+        },
+        {
           label: 'Buka chat',
           click: () => this.windowController.show('chat')
         },
+        {
+          label: this.actions.isMuted() ? 'Unmute' : 'Mute',
+          click: () => {
+            void Promise.resolve()
+              .then(this.actions.onToggleMute)
+              .then(() => this.rebuildMenu())
+              .catch(() => undefined)
+          }
+        },
+        { type: 'separator' },
         {
           label: 'Pengingat',
           click: () => this.windowController.show('reminders')
@@ -70,7 +89,7 @@ export class TrayController {
           }
         },
         { type: 'separator' },
-        { label: 'Keluar', click: this.quit }
+        { label: 'Keluar', click: this.actions.quit }
       ])
     )
   }

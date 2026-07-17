@@ -84,7 +84,7 @@ export async function createYachiyoLive2D(options: Live2DOptions): Promise<Live2
   let destroyed = false
   let animationFrame = 0
   let lastFrame = performance.now()
-  let scale = clamp(options.scale, 0.65, 1.5)
+  let scale = clamp(options.scale, 0.5, 2)
 
   const resize = (): void => {
     const pixelRatio = Math.min(window.devicePixelRatio || 1, 2)
@@ -129,7 +129,7 @@ export async function createYachiyoLive2D(options: Live2DOptions): Promise<Live2
     setLipSync: (value) => model.setLipSync(value),
     setPointer: (x, y) => model.setDragging(clamp(x, -1, 1), clamp(y, -1, 1)),
     setScale: (value) => {
-      scale = clamp(value, 0.65, 1.5)
+      scale = clamp(value, 0.5, 2)
     },
     startMotion: (group, index) => model.startMotion(group, index)
   }

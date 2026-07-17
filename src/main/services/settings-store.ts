@@ -102,6 +102,37 @@ export class SettingsStore {
     })
   }
 
+  async updateDesktop(
+    patch: Partial<Omit<Settings['desktop'], 'windowBounds'>> & {
+      windowBounds?: Settings['desktop']['windowBounds']
+    }
+  ): Promise<void> {
+    await this.exclusive(async () => {
+      const next = settingsSchema.parse({
+        ...this.settings,
+        desktop: { ...this.settings.desktop, ...patch }
+      })
+      await this.persist(next)
+      this.settings = next
+    })
+  }
+
+  async updateLauncherPosition(
+    position: Settings['desktop']['launcher']['position']
+  ): Promise<void> {
+    await this.exclusive(async () => {
+      const next = settingsSchema.parse({
+        ...this.settings,
+        desktop: {
+          ...this.settings.desktop,
+          launcher: { ...this.settings.desktop.launcher, position }
+        }
+      })
+      await this.persist(next)
+      this.settings = next
+    })
+  }
+
   async updateAssetPath(
     kind: 'live2d' | 'voice' | 'cubism-core',
     selectedPath: string

@@ -130,7 +130,7 @@ test('onboarding, secure bridge, mock chat, and settings work in Electron', asyn
     await page.getByLabel('Pesan untuk Yachiyo').fill('/mock 500')
     await page.getByRole('button', { name: 'Kirim' }).click()
     await expect(page.getByRole('alert')).toContainText('HTTP 500')
-    await page.getByRole('button', { name: 'Tutup chat' }).click()
+    await page.getByRole('button', { name: 'Tutup chat dan kembali ke Companion Mode' }).click()
 
     await page.getByRole('button', { name: 'Atur' }).click()
     await page
@@ -277,7 +277,7 @@ test('onboarding, secure bridge, mock chat, and settings work in Electron', asyn
     await expect(page.getByText('REAL HERMES SSE E2E', { exact: true })).toBeVisible({
       timeout: 15_000
     })
-    await page.getByRole('button', { name: 'Tutup chat' }).click()
+    await page.getByRole('button', { name: 'Tutup chat dan kembali ke Companion Mode' }).click()
     expect(hermesServer.requests).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ method: 'GET', path: '/v1/models' }),

@@ -151,20 +151,40 @@ test('packaged executable starts with clean-profile fallbacks and bundled sideca
     await expect(page.getByTestId('mao-selected-path')).toContainText(assetFixtures.maoParent)
     await expect(page.getByTestId('kobo-selected-path')).toContainText(assetFixtures.koboParent)
     await page.getByRole('button', { name: 'Tutup pengaturan' }).click()
-    await page.getByRole('button', { name: 'Sembunyikan ke tray' }).click()
+    await page.getByRole('button', { name: 'Minimalkan Yachiyo' }).click()
     await expect
       .poll(() =>
         application.evaluate(
-          ({ BrowserWindow }) => BrowserWindow.getAllWindows().at(0)?.isVisible() ?? false
+          ({ BrowserWindow }) =>
+            BrowserWindow.getAllWindows()
+              .find((window) => window.getTitle() === 'Yachiyo Companion')
+              ?.isVisible() ?? false
         )
       )
       .toBe(false)
-    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().at(0)?.show())
     await expect
       .poll(() =>
         application.evaluate(
-          ({ BrowserWindow }) => BrowserWindow.getAllWindows().at(0)?.isVisible() ?? false
+          ({ BrowserWindow }) =>
+            BrowserWindow.getAllWindows()
+              .find((window) => window.getTitle() === 'Yachiyo Floating Launcher')
+              ?.isVisible() ?? false
         )
+      )
+      .toBe(true)
+    const launcher = application
+      .windows()
+      .find((candidate) => candidate.url().includes('launcher.html'))
+    if (!launcher) throw new Error('Floating launcher page was not created.')
+    await launcher.getByRole('button', { name: /Buka Yachiyo Companion/ }).click()
+    await expect
+      .poll(() =>
+        application.evaluate(({ BrowserWindow }) => {
+          const main = BrowserWindow.getAllWindows().find(
+            (window) => window.getTitle() === 'Yachiyo Companion'
+          )
+          return Boolean(main?.isVisible() && main.isFocused())
+        })
       )
       .toBe(true)
   } finally {

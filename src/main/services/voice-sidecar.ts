@@ -140,6 +140,17 @@ export class VoiceSidecar {
     this.pendingPlayback.clear()
   }
 
+  async stopAndWait(timeoutMs = 3_000): Promise<void> {
+    const child = this.child
+    const stopped = child?.exitCode === null ? waitForChildExit(child) : null
+    this.stop()
+    if (!stopped) return
+    await Promise.race([
+      stopped,
+      new Promise<void>((resolvePromise) => setTimeout(resolvePromise, timeoutMs))
+    ])
+  }
+
   capabilities(): VoiceCapabilities {
     const runtime = normalizeRuntime(this.health?.runtime)
     const rvcReady = Boolean(this.health?.rvc)

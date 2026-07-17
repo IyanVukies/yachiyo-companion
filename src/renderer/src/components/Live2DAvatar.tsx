@@ -14,6 +14,7 @@ type Props = {
   onReady: () => void
   scale: number
   state: AvatarState
+  interactionEnabled?: boolean
 }
 
 type Controller = {
@@ -40,7 +41,7 @@ type AdapterModule = {
 let coreLoad: Promise<void> | null = null
 
 export const Live2DAvatar = forwardRef<Live2DAvatarHandle, Props>(function Live2DAvatar(
-  { lipSync, onActivate, onError, onReady, scale, state },
+  { interactionEnabled = true, lipSync, onActivate, onError, onReady, scale, state },
   ref
 ): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -102,15 +103,22 @@ export const Live2DAvatar = forwardRef<Live2DAvatarHandle, Props>(function Live2
       className="live2d-avatar no-drag"
       type="button"
       data-state={state}
-      aria-label="Buka chat dengan Mao"
-      onClick={onActivate}
+      aria-label={
+        interactionEnabled ? 'Buka chat dengan Mao' : 'Avatar Mao sedang diatur posisinya'
+      }
+      onClick={() => {
+        if (interactionEnabled) onActivate()
+      }}
       onPointerMove={(event) => {
+        if (!interactionEnabled) return
         const bounds = event.currentTarget.getBoundingClientRect()
         const x = ((event.clientX - bounds.left) / bounds.width) * 2 - 1
         const y = -(((event.clientY - bounds.top) / bounds.height) * 2 - 1)
         controllerRef.current?.setPointer(x, y)
       }}
-      onPointerLeave={() => controllerRef.current?.setPointer(0, 0)}
+      onPointerLeave={() => {
+        if (interactionEnabled) controllerRef.current?.setPointer(0, 0)
+      }}
     >
       <span className="live2d-aura" aria-hidden="true" />
       <canvas

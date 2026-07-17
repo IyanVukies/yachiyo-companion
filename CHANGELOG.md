@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.2.3 - 2026-07-18
+
+Live2D main-menu visibility hotfix.
+
+### Fixed
+
+- Give the Live2D-only transform wrapper an explicit stage-relative size so Mao no longer collapses to a zero-width element after avatar positioning was introduced.
+- Keep fallback-avatar intrinsic sizing unchanged and align the Live2D wrapper bounds with the visible canvas for accurate drag, bubble placement, and viewport safety.
+- Require installed-build regression coverage to verify visible CSS dimensions and a nontrivial canvas backing store instead of trusting the runtime-ready label alone.
+
+## 0.2.2 - 2026-07-18
+
+Companion UX and Windows lifecycle patch.
+
+### Added
+
+- Normalized avatar X/Y positioning, safe viewport clamping, direct drag edit mode, lock/reset/center controls, live preview, and restart persistence.
+- A compact Companion composer and adaptive streaming response bubble backed by the same conversation state as a dedicated Full Chat view.
+- A lightweight static floating launcher with restore, drag, edge snap, native context menu, multi-monitor-safe position persistence, and status indicators.
+- Configurable minimize/close behavior, main-window always-on-top separation, tray restore actions, and a configurable `Ctrl+Shift+Y` global restore shortcut.
+
+### Fixed
+
+- Minimize now follows the selected lifecycle instead of leaving a hard-to-find frameless window behind other applications.
+- Presentation changes preserve the active Hermes request, streaming response, draft, voice playback, lip-sync, and conversation history.
+- Stateful control-envelope filtering prevents `<yachiyo_control>` tags and payloads from reaching visible text, history, copy, TTS, RVC, or partial error output, including tags split across SSE chunks.
+
+### Architecture and compatibility
+
+- Hermes, conversation state, Live2D, TTS/RVC, and the voice sidecar remain single-instance; the launcher receives only bounded status/actions and no conversation content or credentials.
+- Existing settings are upgraded through schema defaults without discarding Hermes, asset, voice, reminder, or privacy configuration.
+- The Kobo RVC runtime remains version `0.2.0`; this patch changes the Electron application only.
+
 ## 0.2.1 - 2026-07-17
 
 Hermes VPS integration reliability release.

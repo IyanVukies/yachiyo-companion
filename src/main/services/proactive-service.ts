@@ -120,7 +120,8 @@ export class ProactiveService {
   }
 
   private tryDeliver(reminder: Reminder, now: Date): OperationResult {
-    const settings = this.getSettings().proactive
+    const appSettings = this.getSettings()
+    const settings = appSettings.proactive
     const deliveredToday = this.reminders.filter(
       (item) =>
         item.deliveredAt &&
@@ -145,7 +146,7 @@ export class ProactiveService {
               item.id !== reminder.id && (item.deliveredAt !== null || item.dismissedAt !== null)
           )
           .map((item) => item.dedupeKey),
-        fullscreen: this.isFullscreen(),
+        fullscreen: appSettings.desktop.doNotDisturb && this.isFullscreen(),
         avatarBusy: this.isAvatarBusy()
       },
       now

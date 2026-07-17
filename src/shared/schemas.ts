@@ -16,6 +16,35 @@ export const avatarStateSchema = z.enum([
 export const connectionModeSchema = z.enum(['mock', 'hermes'])
 export const voiceModeSchema = z.enum(['rvc', 'basic', 'disabled'])
 export const logLevelSchema = z.enum(['error', 'warn', 'info', 'debug'])
+export const presentationModeSchema = z.enum(['companion', 'full-chat'])
+export const launcherStatusSchema = z.enum([
+  'online',
+  'offline',
+  'listening',
+  'thinking',
+  'speaking',
+  'unread'
+])
+
+export const launcherPositionSchema = z
+  .object({
+    displayId: z.number().int(),
+    x: z.number().int(),
+    y: z.number().int(),
+    snappedEdge: z.enum(['left', 'right', 'top', 'bottom']).nullable()
+  })
+  .strict()
+
+const launcherSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    size: z.number().int().min(52).max(72),
+    snapToEdge: z.boolean(),
+    autoHidePartially: z.boolean(),
+    showStatusIndicator: z.boolean(),
+    position: launcherPositionSchema.nullable()
+  })
+  .strict()
 
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
 const localPathSchema = z.string().trim().max(1024)
@@ -75,7 +104,27 @@ export const settingsSchema = z
         alwaysOnTop: z.boolean(),
         clickThrough: z.boolean(),
         autoStart: z.boolean(),
-        scale: z.number().min(0.65).max(1.5),
+        scale: z.number().min(0.5).max(2),
+        positionX: z.number().min(-1).max(1).default(0),
+        positionY: z.number().min(-1).max(1).default(0),
+        avatarAnchor: z.literal('bottom-center').default('bottom-center'),
+        avatarPositionLocked: z.boolean().default(true),
+        minimizeBehavior: z.enum(['launcher', 'normal', 'tray']).default('launcher'),
+        closeBehavior: z.enum(['hide', 'ask', 'quit']).default('hide'),
+        rememberPosition: z.boolean().default(true),
+        rememberSize: z.boolean().default(true),
+        restorePreviousPresentationMode: z.boolean().default(true),
+        lastPresentationMode: presentationModeSchema.default('companion'),
+        globalShortcut: z.string().trim().min(1).max(64).default('CommandOrControl+Shift+Y'),
+        doNotDisturb: z.boolean().default(false),
+        launcher: launcherSettingsSchema.default({
+          enabled: true,
+          size: 64,
+          snapToEdge: true,
+          autoHidePartially: false,
+          showStatusIndicator: true,
+          position: null
+        }),
         windowBounds: z
           .object({
             x: z.number().int(),
@@ -154,6 +203,26 @@ export const defaultSettings: Settings = {
     clickThrough: false,
     autoStart: false,
     scale: 1,
+    positionX: 0,
+    positionY: 0,
+    avatarAnchor: 'bottom-center',
+    avatarPositionLocked: true,
+    minimizeBehavior: 'launcher',
+    closeBehavior: 'hide',
+    rememberPosition: true,
+    rememberSize: true,
+    restorePreviousPresentationMode: true,
+    lastPresentationMode: 'companion',
+    globalShortcut: 'CommandOrControl+Shift+Y',
+    doNotDisturb: false,
+    launcher: {
+      enabled: true,
+      size: 64,
+      snapToEdge: true,
+      autoHidePartially: false,
+      showStatusIndicator: true,
+      position: null
+    },
     windowBounds: null
   },
   assets: {
@@ -207,6 +276,13 @@ export const chatStartSchema = z
   .strict()
 
 export const requestIdSchema = z.uuid()
+export const launcherDragSchema = z
+  .object({
+    phase: z.enum(['start', 'move', 'end']),
+    screenX: z.number().min(-1_000_000).max(1_000_000),
+    screenY: z.number().min(-1_000_000).max(1_000_000)
+  })
+  .strict()
 
 export const connectionTestSchema = z
   .object({

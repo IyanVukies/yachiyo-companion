@@ -1,7 +1,8 @@
 import { join, resolve } from 'node:path'
 
-import { app, globalShortcut, protocol, screen, session, type WebContents } from 'electron'
+import { app, protocol, screen, session, type WebContents } from 'electron'
 
+import { IPC } from '../shared/ipc'
 import type { AssetStatus } from '../shared/types'
 import { registerIpc } from './ipc/register-ipc'
 import { AssetValidator } from './services/asset-validator'
@@ -15,8 +16,8 @@ import { SettingsStore } from './services/settings-store'
 import { VoiceSidecar } from './services/voice-sidecar'
 import { TrayController } from './tray/tray-controller'
 import { DesktopWindowController } from './windows/desktop-window'
-
-const RECOVERY_SHORTCUT = 'CommandOrControl+Shift+F12'
+import { FloatingLauncherController } from './windows/floating-launcher'
+import { GlobalShortcutController } from './windows/global-shortcuts'
 
 registerAssetScheme()
 
@@ -25,7 +26,9 @@ if (customDataRoot) app.setPath('userData', resolve(customDataRoot))
 if (app.isPackaged) process.env.YACHIYO_DISABLE_DEVTOOLS = '1'
 
 let windowController: DesktopWindowController | null = null
+let launcherController: FloatingLauncherController | null = null
 let trayController: TrayController | null = null
+let shortcutController: GlobalShortcutController | null = null
 let mockServer: MockHermesServer | null = null
 let voiceSidecar: VoiceSidecar | null = null
 let proactiveService: ProactiveService | null = null
@@ -86,21 +89,67 @@ async function startApplication(): Promise<void> {
   assetStatus = assetValidator.refreshRuntime(assetStatus)
 
   configureSessionSecurity(() => settingsStore.get().privacy.microphoneEnabled)
+  let quitting = false
+  let cleanupComplete = false
+  let cleanupPromise: Promise<void> | null = null
+  const quit = (): void => {
+    quitting = true
+    windowController?.setQuitting()
+    launcherController?.setQuitting()
+    app.quit()
+  }
+  let lastVoiceMode: 'rvc' | 'basic' = settingsStore.get().voice.mode === 'rvc' ? 'rvc' : 'basic'
+  const toggleMute = async (): Promise<void> => {
+    const current = settingsStore.get()
+    const muted = current.voice.mode === 'disabled'
+    if (current.voice.mode === 'rvc' || current.voice.mode === 'basic') {
+      lastVoiceMode = current.voice.mode
+    }
+    await settingsStore.update({
+      settings: {
+        ...current,
+        voice: { ...current.voice, mode: muted ? lastVoiceMode : 'disabled' }
+      }
+    })
+    if (!muted) voiceSidecar?.stopCurrent()
+    windowController?.browserWindow?.webContents.send(IPC.appCommand, 'mute')
+    trayController?.rebuildMenu()
+  }
+
+  launcherController = new FloatingLauncherController(
+    join(import.meta.dirname, '../preload/launcher.cjs'),
+    settingsStore,
+    logger,
+    {
+      onRestore: (command) => windowController?.show(command),
+      onToggleMute: toggleMute,
+      isMuted: () => settingsStore.get().voice.mode === 'disabled',
+      onSetMainAlwaysOnTop: async (enabled) => {
+        await windowController?.setAlwaysOnTop(enabled)
+        trayController?.rebuildMenu()
+      },
+      isMainAlwaysOnTop: () => settingsStore.get().desktop.alwaysOnTop,
+      onQuit: quit
+    }
+  )
   windowController = new DesktopWindowController(
     join(import.meta.dirname, '../preload/index.cjs'),
     settingsStore,
-    logger
+    logger,
+    {
+      showLauncher: () => launcherController?.show(),
+      hideLauncher: () => launcherController?.hide(),
+      quit
+    }
   )
   const mainWindow = windowController.create()
   configurePermissions(mainWindow.webContents, () => settingsStore.get().privacy.microphoneEnabled)
 
-  let quitting = false
-  const quit = (): void => {
-    quitting = true
-    windowController?.setQuitting()
-    app.quit()
-  }
-  trayController = new TrayController(windowController, settingsStore, quit)
+  trayController = new TrayController(windowController, settingsStore, {
+    onToggleMute: toggleMute,
+    isMuted: () => settingsStore.get().voice.mode === 'disabled',
+    quit
+  })
   trayController.create()
 
   proactiveService = new ProactiveService(
@@ -122,6 +171,12 @@ async function startApplication(): Promise<void> {
     assetValidator,
     proactiveService,
     logger,
+    applyDesktopSettings: () => {
+      windowController?.applySettings()
+      launcherController?.applySettings()
+    },
+    applyGlobalShortcut: () => shortcutController?.applySettings() ?? true,
+    setLauncherStatus: (status) => launcherController?.updateStatus(status),
     getAssetStatus: () => assetStatus,
     setAssetStatus: (status) => {
       assetStatus = status
@@ -129,34 +184,75 @@ async function startApplication(): Promise<void> {
   })
   await proactiveService.start()
 
-  const shortcutRegistered = globalShortcut.register(RECOVERY_SHORTCUT, () => {
-    void windowController?.setClickThrough(false).then(() => {
-      windowController?.show()
-      trayController?.rebuildMenu()
-    })
-  })
-  if (!shortcutRegistered) logger.warn('Shortcut pemulihan global tidak dapat didaftarkan.')
+  shortcutController = new GlobalShortcutController(
+    settingsStore,
+    logger,
+    () => windowController?.show(),
+    () => {
+      void windowController?.setClickThrough(false).then(() => {
+        windowController?.show()
+        trayController?.rebuildMenu()
+      })
+    }
+  )
+  shortcutController.create()
 
-  screen.on('display-removed', () => windowController?.ensureVisible())
-  screen.on('display-metrics-changed', () => windowController?.ensureVisible())
+  const ensureWindowsVisible = (): void => {
+    windowController?.ensureVisible()
+    launcherController?.ensureVisible()
+  }
+  screen.on('display-added', ensureWindowsVisible)
+  screen.on('display-removed', ensureWindowsVisible)
+  screen.on('display-metrics-changed', ensureWindowsVisible)
   app.on('activate', () => windowController?.show())
   app.on('window-all-closed', () => {
     if (quitting) app.quit()
   })
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
     quitting = true
     windowController?.setQuitting()
-    proactiveService?.stop()
-    disposeIpc?.()
-    disposeIpc = null
-    voiceSidecar?.stop()
-    void mockServer?.stop()
+    launcherController?.setQuitting()
+    if (cleanupComplete) return
+    event.preventDefault()
+    if (cleanupPromise) return
+    cleanupPromise = (async () => {
+      proactiveService?.stop()
+      disposeIpc?.()
+      disposeIpc = null
+      launcherController?.destroy()
+      await Promise.allSettled([
+        voiceSidecar?.stopAndWait() ?? Promise.resolve(),
+        withTimeout(mockServer?.stop() ?? Promise.resolve(), 3_000)
+      ])
+    })()
+      .catch((error: unknown) =>
+        logger?.warn('Shutdown terkoordinasi tidak selesai bersih.', error)
+      )
+      .finally(() => {
+        cleanupComplete = true
+        app.quit()
+      })
   })
   app.on('will-quit', () => {
-    globalShortcut.unregisterAll()
+    shortcutController?.destroy()
     protocol.unhandle('yachiyo-asset')
     trayController?.destroy()
+    launcherController?.destroy()
   })
+}
+
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T | undefined> {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<undefined>((resolvePromise) => {
+        timer = setTimeout(() => resolvePromise(undefined), timeoutMs)
+      })
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 function configureSessionSecurity(microphoneEnabled: () => boolean): void {

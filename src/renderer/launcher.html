@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Yachiyo Floating Launcher</title>
+  </head>
+  <body>
+    <button
+      id="launcher"
+      class="launcher"
+      type="button"
+      aria-label="Buka Yachiyo Companion"
+      title="Buka Yachiyo Companion"
+      data-status="online"
+    >
+      <span class="launcher__orb" aria-hidden="true">Y</span>
+      <span class="launcher__status" aria-hidden="true"></span>
+    </button>
+    <script type="module" src="/src/launcher.ts"></script>
+  </body>
+</html>

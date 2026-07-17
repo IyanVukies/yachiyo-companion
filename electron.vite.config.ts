@@ -18,6 +18,10 @@ export default defineConfig({
     build: {
       externalizeDeps: true,
       rollupOptions: {
+        input: {
+          index: resolve('src/preload/index.ts'),
+          launcher: resolve('src/preload/launcher.ts')
+        },
         output: {
           format: 'cjs',
           entryFileNames: '[name].cjs'
@@ -40,7 +44,13 @@ export default defineConfig({
       }
     },
     build: {
-      sourcemap: false
+      sourcemap: false,
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          launcher: resolve('src/renderer/launcher.html')
+        }
+      }
     }
   }
 })

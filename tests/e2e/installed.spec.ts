@@ -14,7 +14,7 @@ const projectRoot = resolve(import.meta.dirname, '../..')
 const installedExecutable = resolve(projectRoot, 'output/installed-smoke/Yachiyo Companion.exe')
 const screenshots = resolve(projectRoot, 'docs/screenshots')
 
-test('installed 0.2.1 converts and plays Kobo RVC while Mao ParamA is active', async ({
+test('installed 0.2.3 converts and plays Kobo RVC while Mao ParamA is active', async ({
   browserName
 }, testInfo) => {
   test.setTimeout(600_000)
@@ -32,7 +32,7 @@ test('installed 0.2.1 converts and plays Kobo RVC while Mao ParamA is active', a
 
   try {
     expect(await application.evaluate(({ app }) => app.isPackaged)).toBe(true)
-    expect(await application.evaluate(({ app }) => app.getVersion())).toBe('0.2.1')
+    expect(await application.evaluate(({ app }) => app.getVersion())).toBe('0.2.3')
     expect(await application.evaluate(({ app }) => app.getPath('userData'))).toBe(dataDirectory)
     const page = await application.firstWindow()
     await page.getByRole('button', { name: 'Lanjut' }).click()
@@ -107,6 +107,7 @@ test('installed 0.2.1 converts and plays Kobo RVC while Mao ParamA is active', a
     await expect(page.getByText('Mao runtime aktif', { exact: true })).toBeVisible({
       timeout: 30_000
     })
+    await expectLive2DAvatarVisible(page)
 
     expect(await quitApplication(application)).toBe(true)
     application = null
@@ -116,6 +117,7 @@ test('installed 0.2.1 converts and plays Kobo RVC while Mao ParamA is active', a
     await expect(restored.getByText('Mao runtime aktif', { exact: true })).toBeVisible({
       timeout: 30_000
     })
+    await expectLive2DAvatarVisible(restored)
     const restarted = await voiceProof(restored)
     expect(restarted.sidecar).toBe('ready')
     expect(restarted.runtime).toBe('ready')
@@ -147,6 +149,24 @@ function launchInstalled(dataDirectory: string): Promise<ElectronApplication> {
       YACHIYO_DISABLE_DEVTOOLS: '1'
     }
   })
+}
+
+async function expectLive2DAvatarVisible(
+  page: Awaited<ReturnType<ElectronApplication['firstWindow']>>
+): Promise<void> {
+  const avatar = page.locator(
+    '.avatar-transform-layer[data-avatar-variant="live2d"] .live2d-avatar'
+  )
+  const canvas = avatar.locator('canvas')
+  await expect(avatar).toBeVisible()
+  const bounds = await avatar.boundingBox()
+  expect(bounds?.width).toBeGreaterThan(100)
+  expect(bounds?.height).toBeGreaterThan(100)
+  const canvasBounds = await canvas.boundingBox()
+  expect(canvasBounds?.width).toBeGreaterThan(100)
+  expect(canvasBounds?.height).toBeGreaterThan(100)
+  expect(Number(await canvas.getAttribute('width'))).toBeGreaterThan(1)
+  expect(Number(await canvas.getAttribute('height'))).toBeGreaterThan(1)
 }
 
 async function playbackSource(

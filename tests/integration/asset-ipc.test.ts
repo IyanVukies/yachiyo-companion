@@ -301,6 +301,9 @@ async function ipcFixture(): Promise<{
       act: vi.fn()
     },
     logger,
+    applyDesktopSettings: vi.fn(),
+    applyGlobalShortcut: vi.fn(() => true),
+    setLauncherStatus: vi.fn(),
     getAssetStatus: () => currentStatus,
     setAssetStatus
   } as never)

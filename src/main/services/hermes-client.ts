@@ -6,6 +6,12 @@ import type {
   NormalizedError
 } from '../../shared/types'
 
+import {
+  parseAvatarMetadata,
+  sanitizeYachiyoVisibleText,
+  YachiyoControlEnvelopeParser
+} from './yachiyo-control-parser'
+
 export type HermesConfig = {
   baseUrl: string
   apiKey: string
@@ -145,12 +151,14 @@ export class HermesClient {
     onDelta: (text: string) => void
   ): Promise<StreamResult> {
     const endpoint = buildEndpoint(config.baseUrl, 'chat/completions')
-    let partialText = ''
     let attempt = 0
     let requestStreaming = config.streaming
     let usedStreamingFallback = false
 
     for (;;) {
+      let rawText = ''
+      let visibleText = ''
+      const controlParser = new YachiyoControlEnvelopeParser()
       const deadline = createDeadline(config.timeoutMs, signal)
       try {
         const response = await fetch(endpoint, {
@@ -173,7 +181,7 @@ export class HermesClient {
           throw statusError(
             response,
             endpoint,
-            partialText,
+            visibleText,
             summarizeBody(rawBody),
             looksLikeModelFailure(rawBody)
           )
@@ -181,53 +189,68 @@ export class HermesClient {
 
         let transport: StreamResult['transport']
         if (requestStreaming && response.body && isEventStream(response)) {
-          partialText = await parseEventStream(response.body, deadline.signal, (delta) => {
-            partialText += delta
-            onDelta(delta)
+          rawText = await parseEventStream(response.body, deadline.signal, (delta) => {
+            rawText += delta
+            const visibleDelta = controlParser.push(delta)
+            if (!visibleDelta) return
+            visibleText += visibleDelta
+            onDelta(visibleDelta)
           })
           transport = 'sse'
         } else {
           const rawBody = await readBoundedBody(response, deadline.signal)
           const body = parseJsonResponse(rawBody, endpoint)
-          partialText = completionContent(body) ?? ''
-          if (!partialText.trim()) {
+          rawText = completionContent(body) ?? ''
+          if (!rawText.trim()) {
             throw malformedResponse(
               'Hermes tidak mengirim choices[0].message.content.',
-              partialText,
+              visibleText,
               endpoint,
               summarizeBody(rawBody)
             )
           }
-          onDelta(partialText)
+          const visibleDelta = controlParser.push(rawText)
+          if (visibleDelta) {
+            visibleText += visibleDelta
+            onDelta(visibleDelta)
+          }
           transport = usedStreamingFallback ? 'json-fallback' : 'json'
         }
 
-        if (!partialText.trim()) {
+        const control = controlParser.finish()
+        visibleText = control.text
+        const structured = parseStructuredContent(rawText)
+        const displayText = sanitizeYachiyoVisibleText(structured?.text ?? visibleText)
+        if (!displayText.trim()) {
           throw requestStreaming
-            ? malformedStream('Hermes menyelesaikan stream tanpa teks jawaban.', '', endpoint)
-            : malformedResponse('Hermes tidak mengirim teks jawaban.', '', endpoint, null)
+            ? malformedStream(
+                'Hermes menyelesaikan stream tanpa teks jawaban.',
+                visibleText,
+                endpoint
+              )
+            : malformedResponse('Hermes tidak mengirim teks jawaban.', visibleText, endpoint, null)
         }
-        const structured = parseStructuredContent(partialText)
         return {
-          rawText: partialText,
-          displayText: structured?.text ?? partialText,
-          metadata: structured?.metadata ?? null,
+          rawText,
+          displayText,
+          metadata: control.metadata ?? structured?.metadata ?? null,
           transport
         }
       } catch (error) {
         if (signal.aborted) throw error
-        const requestError = normalizeThrown(error, partialText, endpoint, deadline.timedOut())
+        const normalized = normalizeThrown(error, visibleText, endpoint, deadline.timedOut())
+        const requestError = new HermesRequestError(normalized.normalized, visibleText)
         const canFallback =
           requestStreaming &&
           !usedStreamingFallback &&
-          partialText.length === 0 &&
+          rawText.length === 0 &&
           ['MALFORMED_STREAM', 'MALFORMED_RESPONSE'].includes(requestError.normalized.code)
         if (canFallback) {
           requestStreaming = false
           usedStreamingFallback = true
           continue
         }
-        const mayRetry = partialText.length === 0 && requestError.normalized.retryable
+        const mayRetry = rawText.length === 0 && requestError.normalized.retryable
         if (!mayRetry || attempt >= config.retryCount) throw requestError
         attempt += 1
         await delay(250 * attempt, signal)
@@ -983,33 +1006,10 @@ function parseStructuredContent(text: string): { text: string; metadata: AvatarM
   try {
     const value = JSON.parse(text) as Record<string, unknown>
     if (typeof value.text !== 'string') return null
-    const metadata: AvatarMetadata = {}
-    const emotions = new Set([
-      'idle',
-      'listening',
-      'thinking',
-      'speaking',
-      'happy',
-      'concerned',
-      'confused',
-      'reminder',
-      'success',
-      'error'
-    ])
-    const motions = new Set(['idle', 'nod', 'wave', 'celebrate', 'concerned'])
-    if (typeof value.emotion === 'string' && emotions.has(value.emotion)) {
-      metadata.emotion = value.emotion as NonNullable<AvatarMetadata['emotion']>
+    return {
+      text: sanitizeYachiyoVisibleText(value.text),
+      metadata: parseAvatarMetadata(value) ?? {}
     }
-    if (typeof value.motion === 'string' && motions.has(value.motion)) {
-      metadata.motion = value.motion as NonNullable<AvatarMetadata['motion']>
-    }
-    if (['low', 'normal', 'high'].includes(String(value.importance))) {
-      metadata.importance = value.importance as NonNullable<AvatarMetadata['importance']>
-    }
-    if (typeof value.requires_response === 'boolean') {
-      metadata.requiresResponse = value.requires_response
-    }
-    return { text: value.text, metadata }
   } catch {
     return null
   }

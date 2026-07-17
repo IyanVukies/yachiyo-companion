@@ -7,9 +7,16 @@ type Props = {
   lipSync: number
   scale: number
   onActivate: () => void
+  interactionEnabled?: boolean
 }
 
-export function FallbackAvatar({ state, lipSync, scale, onActivate }: Props): React.JSX.Element {
+export function FallbackAvatar({
+  state,
+  lipSync,
+  scale,
+  onActivate,
+  interactionEnabled = true
+}: Props): React.JSX.Element {
   const [look, setLook] = useState<'left' | 'center' | 'right'>('center')
   const mouth = Math.min(4, Math.round(lipSync * 4))
   const scaleStep = scale < 0.85 ? 'small' : scale > 1.15 ? 'large' : 'normal'
@@ -22,14 +29,22 @@ export function FallbackAvatar({ state, lipSync, scale, onActivate }: Props): Re
       data-mouth={mouth}
       data-look={look}
       data-scale={scaleStep}
-      aria-label="Buka chat dengan Yachiyo"
-      onClick={onActivate}
+      style={{ '--fallback-avatar-scale': scale } as React.CSSProperties}
+      aria-label={
+        interactionEnabled ? 'Buka chat dengan Yachiyo' : 'Avatar Yachiyo sedang diatur posisinya'
+      }
+      onClick={() => {
+        if (interactionEnabled) onActivate()
+      }}
       onPointerMove={(event) => {
+        if (!interactionEnabled) return
         const bounds = event.currentTarget.getBoundingClientRect()
         const ratio = (event.clientX - bounds.left) / bounds.width
         setLook(ratio < 0.4 ? 'left' : ratio > 0.6 ? 'right' : 'center')
       }}
-      onPointerLeave={() => setLook('center')}
+      onPointerLeave={() => {
+        if (interactionEnabled) setLook('center')
+      }}
     >
       <span className="avatar-aura" aria-hidden="true" />
       <svg

@@ -6,7 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const electron = vi.hoisted(() => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
-  return { handlers, setLoginItemSettings: vi.fn(), showSaveDialog: vi.fn() }
+  return {
+    handlers,
+    setLoginItemSettings: vi.fn(),
+    showSaveDialog: vi.fn(),
+    clipboardWriteText: vi.fn()
+  }
 })
 
 vi.mock('electron', () => ({
@@ -15,7 +20,7 @@ vi.mock('electron', () => ({
     getLoginItemSettings: () => ({ openAtLogin: false }),
     setLoginItemSettings: electron.setLoginItemSettings
   },
-  clipboard: { writeText: vi.fn() },
+  clipboard: { writeText: electron.clipboardWriteText },
   dialog: { showOpenDialog: vi.fn(), showSaveDialog: electron.showSaveDialog },
   ipcMain: {
     removeHandler: (channel: string) => electron.handlers.delete(channel),
@@ -48,6 +53,7 @@ beforeEach(() => {
   electron.handlers.clear()
   electron.setLoginItemSettings.mockReset()
   electron.showSaveDialog.mockReset()
+  electron.clipboardWriteText.mockReset()
 })
 
 afterEach(async () => {
@@ -231,6 +237,66 @@ describe('Hermes IPC end-to-end configuration flow', () => {
     expect(content).not.toContain('Bearer')
     expect(content).not.toContain('Authorization')
   })
+
+  it('keeps control envelopes out of chat history, final text, TTS, and clipboard', async () => {
+    const fixture = await ipcFixture()
+    fixture.client.stream.mockResolvedValueOnce({
+      rawText: 'Jawaban aman.<yachiyo_control>{"emotion":"happy"}</yachiyo_control>',
+      displayText: 'Jawaban aman.<yachiyo_control>{"emotion":"happy"}</yachiyo_control>',
+      metadata: { emotion: 'happy' as const },
+      transport: 'sse' as const
+    })
+
+    await invoke(IPC.chatStart, fixture.sender, {
+      requestId: '00000000-0000-4000-8000-000000000302',
+      messages: [
+        {
+          role: 'assistant',
+          content: 'Riwayat aman.<yachiyo_control>{"motion":"wave"}</yachiyo_control>'
+        },
+        {
+          role: 'user',
+          content: 'Balas aman.</yachiyo_control>'
+        }
+      ]
+    })
+    await vi.waitFor(() =>
+      expect(fixture.sender.send).toHaveBeenCalledWith(IPC.chatEvent, {
+        type: 'done',
+        requestId: '00000000-0000-4000-8000-000000000302',
+        text: 'Jawaban aman.'
+      })
+    )
+    expect(fixture.client.stream.mock.calls[0]?.[1]).toEqual([
+      { role: 'assistant', content: 'Riwayat aman.' },
+      { role: 'user', content: 'Balas aman.' }
+    ])
+
+    await invoke(IPC.voiceSynthesize, fixture.sender, {
+      text: 'Suara aman.<yachiyo_control>{"emotion":"happy"}</yachiyo_control>',
+      mode: 'basic',
+      voice: defaultSettings.voice.ttsVoice,
+      speed: 1,
+      pitch: 0,
+      rvc: defaultSettings.voice.rvc
+    })
+    expect(fixture.voiceSynthesize).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Suara aman.' })
+    )
+
+    await invoke(
+      IPC.clipboardWrite,
+      fixture.sender,
+      'Salin aman.<yachiyo_control>{"importance":"high"}</yachiyo_control>'
+    )
+    expect(electron.clipboardWriteText).toHaveBeenCalledWith('Salin aman.')
+    expect(
+      JSON.stringify({
+        events: fixture.sender.send.mock.calls,
+        clipboard: electron.clipboardWriteText.mock.calls
+      })
+    ).not.toContain('yachiyo_control')
+  })
 })
 
 async function ipcFixture(
@@ -251,6 +317,7 @@ async function ipcFixture(
     probe: ReturnType<typeof vi.fn>
     stream: ReturnType<typeof vi.fn>
   }
+  voiceSynthesize: ReturnType<typeof vi.fn>
 }> {
   const root = await mkdtemp(join(tmpdir(), 'yachiyo-hermes-ipc-'))
   roots.push(root)
@@ -281,6 +348,7 @@ async function ipcFixture(
       })
     )
   }
+  const voiceSynthesize = vi.fn().mockResolvedValue(undefined)
   let assets = missingStatus()
   const dispose = registerIpc({
     dataRoot: root,
@@ -310,7 +378,7 @@ async function ipcFixture(
       refreshCapabilities: vi.fn().mockResolvedValue(voiceCapabilities()),
       setupRuntime: vi.fn(),
       reportPlayback: vi.fn(),
-      synthesize: vi.fn(),
+      synthesize: voiceSynthesize,
       stopCurrent: vi.fn()
     },
     assetValidator: { scan: vi.fn(), refreshRuntime: (status: AssetStatus) => status },
@@ -322,13 +390,16 @@ async function ipcFixture(
       act: vi.fn()
     },
     logger,
+    applyDesktopSettings: vi.fn(),
+    applyGlobalShortcut: vi.fn(() => true),
+    setLauncherStatus: vi.fn(),
     getAssetStatus: () => assets,
     setAssetStatus: (status: AssetStatus) => {
       assets = status
     }
   } as never)
   disposers.push(dispose)
-  return { root, settingsPath, logPath, store, vault, sender, client }
+  return { root, settingsPath, logPath, store, vault, sender, client, voiceSynthesize }
 }
 
 async function invoke<T>(channel: string, sender: object, input?: unknown): Promise<T> {

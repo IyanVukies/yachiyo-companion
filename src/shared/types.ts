@@ -4,6 +4,9 @@ import type {
   assetSelectionRequestSchema,
   avatarStateSchema,
   chatMessageSchema,
+  launcherPositionSchema,
+  launcherStatusSchema,
+  presentationModeSchema,
   settingsSchema,
   voiceRequestSchema
 } from './schemas'
@@ -12,6 +15,14 @@ export type AvatarState = z.infer<typeof avatarStateSchema>
 export type ChatMessage = z.infer<typeof chatMessageSchema>
 export type AppSettings = z.infer<typeof settingsSchema>
 export type VoiceRequest = z.infer<typeof voiceRequestSchema>
+export type PresentationMode = z.infer<typeof presentationModeSchema>
+export type LauncherStatus = z.infer<typeof launcherStatusSchema>
+export type LauncherPosition = z.infer<typeof launcherPositionSchema>
+export type AvatarTransform = Pick<
+  AppSettings['desktop'],
+  'scale' | 'positionX' | 'positionY' | 'avatarAnchor' | 'avatarPositionLocked'
+>
+export type AppCommand = 'chat' | 'companion' | 'settings' | 'reminders' | 'mute'
 
 export type SettingsView = AppSettings & {
   hasApiKey: boolean

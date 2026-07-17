@@ -20,6 +20,92 @@ afterEach(async () => {
 })
 
 describe('settings persistence', () => {
+  it('loads legacy desktop settings without treating them as corrupt', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'yachiyo-settings-'))
+    roots.push(root)
+    const path = join(root, 'settings.json')
+    const legacy = {
+      ...structuredClone(defaultSettings),
+      desktop: {
+        alwaysOnTop: false,
+        clickThrough: false,
+        autoStart: false,
+        scale: 1.25,
+        windowBounds: null
+      }
+    }
+    await writeFile(path, JSON.stringify(legacy), 'utf8')
+    const store = new SettingsStore(
+      path,
+      new MemoryVault(),
+      new AppLogger(join(root, 'app.log'), 'error')
+    )
+
+    await store.load()
+
+    expect(store.get().desktop).toMatchObject({
+      scale: 1.25,
+      positionX: 0,
+      positionY: 0,
+      minimizeBehavior: 'launcher',
+      closeBehavior: 'hide'
+    })
+  })
+
+  it('persists normalized avatar X, Y, and scale across restart', async () => {
+    const { root, path, store, vault } = await fixture()
+    roots.push(root)
+    const settings = structuredClone(defaultSettings)
+    settings.desktop = {
+      ...settings.desktop,
+      scale: 1.6,
+      positionX: 0.45,
+      positionY: -0.35,
+      avatarPositionLocked: false
+    }
+    await store.update({ settings })
+
+    const reloaded = new SettingsStore(
+      path,
+      vault,
+      new AppLogger(join(root, 'reload.log'), 'error')
+    )
+    await reloaded.load()
+
+    expect(reloaded.get().desktop).toMatchObject({
+      scale: 1.6,
+      positionX: 0.45,
+      positionY: -0.35,
+      avatarPositionLocked: false
+    })
+  })
+
+  it('persists launcher display placement and presentation mode atomically', async () => {
+    const { root, path, store, vault } = await fixture()
+    roots.push(root)
+    await store.updateDesktop({
+      lastPresentationMode: 'full-chat',
+      launcher: {
+        ...defaultSettings.desktop.launcher,
+        position: { displayId: 42, x: -640, y: 240, snappedEdge: 'left' }
+      }
+    })
+
+    const reloaded = new SettingsStore(
+      path,
+      vault,
+      new AppLogger(join(root, 'reload.log'), 'error')
+    )
+    await reloaded.load()
+
+    expect(reloaded.get().desktop).toMatchObject({
+      lastPresentationMode: 'full-chat',
+      launcher: {
+        position: { displayId: 42, x: -640, y: 240, snappedEdge: 'left' }
+      }
+    })
+  })
+
   it('stores the API key only in the secret vault', async () => {
     const { root, path, store } = await fixture()
     roots.push(root)

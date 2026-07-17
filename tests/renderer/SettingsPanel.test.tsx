@@ -158,6 +158,44 @@ describe('Hermes settings', () => {
   })
 })
 
+describe('desktop avatar transform settings', () => {
+  it('previews normalized X/Y/scale and opens drag edit only after unlock', () => {
+    const preview = vi.fn<React.ComponentProps<typeof SettingsPanel>['onAvatarTransformPreview']>()
+    const edit = vi.fn<React.ComponentProps<typeof SettingsPanel>['onAvatarEdit']>()
+    renderPanel(voiceWith({ runtimeState: 'ready' }), { preview, edit })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Avatar' }))
+    fireEvent.change(screen.getByLabelText('Skala avatar'), { target: { value: '1.35' } })
+    fireEvent.change(screen.getByLabelText('Posisi horizontal avatar'), {
+      target: { value: '0.42' }
+    })
+    fireEvent.change(screen.getByLabelText('Posisi vertikal avatar'), {
+      target: { value: '-0.3' }
+    })
+
+    expect(preview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scale: 1.35, positionX: 0.42, positionY: -0.3 })
+    )
+    const editButton = screen.getByRole('button', { name: 'Atur langsung pada stage' })
+    expect(editButton).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: /Posisi avatar dikunci/ }))
+    expect(editButton).toBeEnabled()
+    fireEvent.click(editButton)
+    expect(edit).toHaveBeenCalledWith(
+      expect.objectContaining({ positionX: 0.42, positionY: -0.3, avatarPositionLocked: false })
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset posisi' }))
+    expect(preview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ positionX: 0, positionY: 0 })
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Desktop' }))
+    expect(screen.getByLabelText('Perilaku minimize')).toBeVisible()
+    expect(screen.getByLabelText('Shortcut global')).toHaveValue('CommandOrControl+Shift+Y')
+  })
+})
+
 function openVoiceSection(): void {
   fireEvent.click(screen.getByRole('button', { name: 'Suara' }))
 }
@@ -171,6 +209,8 @@ function renderPanel(
     testConnection?: React.ComponentProps<typeof SettingsPanel>['onTestConnection']
     hermes?: HermesConnectionStatus
     save?: React.ComponentProps<typeof SettingsPanel>['onSave']
+    preview?: React.ComponentProps<typeof SettingsPanel>['onAvatarTransformPreview']
+    edit?: React.ComponentProps<typeof SettingsPanel>['onAvatarEdit']
   } = {}
 ): void {
   const settings: SettingsView = {
@@ -196,6 +236,8 @@ function renderPanel(
       onVoiceTest={overrides.voiceTest ?? vi.fn().mockResolvedValue(undefined)}
       onVoiceRuntimeSetup={overrides.setup ?? vi.fn().mockResolvedValue(voice)}
       onVoiceRefresh={overrides.refresh ?? vi.fn().mockResolvedValue(voice)}
+      onAvatarTransformPreview={overrides.preview ?? vi.fn()}
+      onAvatarEdit={overrides.edit ?? vi.fn()}
     />
   )
 }

@@ -9,7 +9,9 @@ import type {
   ConnectionTestResult,
   DiagnosticReport,
   HermesConnectionStatus,
+  LauncherStatus,
   OperationResult,
+  PresentationMode,
   ProactiveEvent,
   SettingsView,
   VoiceCapabilities,
@@ -38,8 +40,16 @@ export const IPC = {
   voiceStop: 'voice:stop',
   windowClickThrough: 'window:click-through',
   windowAlwaysOnTop: 'window:always-on-top',
+  windowMinimize: 'window:minimize',
+  windowClose: 'window:close',
   windowHide: 'window:hide',
   windowResetPosition: 'window:reset-position',
+  windowPresentationMode: 'window:presentation-mode',
+  launcherRestore: 'launcher:restore',
+  launcherOpenChat: 'launcher:open-chat',
+  launcherContextMenu: 'launcher:context-menu',
+  launcherDrag: 'launcher:drag',
+  launcherStatus: 'launcher:status',
   proactiveTest: 'proactive:test',
   proactiveList: 'proactive:list',
   proactiveSchedule: 'proactive:schedule',
@@ -94,8 +104,12 @@ export type YachiyoApi = {
   stopVoice: () => Promise<OperationResult>
   setClickThrough: (enabled: boolean) => Promise<OperationResult>
   setAlwaysOnTop: (enabled: boolean) => Promise<OperationResult>
+  minimizeWindow: () => Promise<OperationResult>
+  closeWindow: () => Promise<OperationResult>
   hideWindow: () => Promise<OperationResult>
   resetWindowPosition: () => Promise<OperationResult>
+  setPresentationMode: (mode: PresentationMode) => Promise<OperationResult>
+  setLauncherStatus: (status: LauncherStatus) => Promise<OperationResult>
   sendTestReminder: () => Promise<OperationResult>
   listReminders: () => Promise<import('./types').Reminder[]>
   scheduleReminder: (payload: {
@@ -109,7 +123,7 @@ export type YachiyoApi = {
     action: 'snooze-10' | 'snooze-60' | 'dismiss'
   }) => Promise<OperationResult>
   onProactiveEvent: (callback: (event: ProactiveEvent) => void) => () => void
-  onAppCommand: (callback: (command: 'chat' | 'settings' | 'reminders') => void) => () => void
+  onAppCommand: (callback: (command: import('./types').AppCommand) => void) => () => void
   exportDiagnostics: () => Promise<{ result: OperationResult; report: DiagnosticReport | null }>
   writeClipboard: (text: string) => Promise<OperationResult>
 }

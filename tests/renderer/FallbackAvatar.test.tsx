@@ -14,6 +14,7 @@ describe('fallback avatar', () => {
     expect(avatar).toHaveAttribute('data-state', 'speaking')
     expect(avatar).toHaveAttribute('data-mouth', '3')
     expect(avatar).toHaveAttribute('data-scale', 'large')
+    expect(avatar).toHaveStyle({ '--fallback-avatar-scale': '1.2' })
     fireEvent.click(avatar)
     expect(activate).toHaveBeenCalledOnce()
   })

@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 
-import { BrowserWindow, screen, type Rectangle } from 'electron'
+import { BrowserWindow, dialog, screen, type Rectangle } from 'electron'
 
+import type { AppCommand } from '../../shared/types'
 import type { AppLogger } from '../services/logger'
 import type { SettingsStore } from '../services/settings-store'
 
@@ -9,20 +10,28 @@ const DEFAULT_WIDTH = 460
 const DEFAULT_HEIGHT = 720
 const EDGE_MARGIN = 24
 
+export type DesktopWindowLifecycle = {
+  showLauncher: () => void
+  hideLauncher: () => void
+  quit: () => void
+}
+
 export class DesktopWindowController {
   private window: BrowserWindow | null = null
   private quitting = false
   private boundsTimer: NodeJS.Timeout | null = null
+  private closePromptOpen = false
 
   constructor(
     private readonly preloadPath: string,
     private readonly settingsStore: SettingsStore,
-    private readonly logger: AppLogger
+    private readonly logger: AppLogger,
+    private readonly lifecycle: DesktopWindowLifecycle
   ) {}
 
   create(): BrowserWindow {
     const settings = this.settingsStore.get()
-    const bounds = correctBounds(settings.desktop.windowBounds)
+    const bounds = initialBounds(settings.desktop)
     const window = new BrowserWindow({
       ...bounds,
       minWidth: 390,
@@ -35,10 +44,10 @@ export class DesktopWindowController {
       backgroundColor: '#00000000',
       resizable: true,
       maximizable: false,
-      minimizable: false,
+      minimizable: true,
       fullscreenable: false,
       alwaysOnTop: settings.desktop.alwaysOnTop,
-      skipTaskbar: true,
+      skipTaskbar: false,
       hasShadow: false,
       title: 'Yachiyo Companion',
       autoHideMenuBar: true,
@@ -56,7 +65,6 @@ export class DesktopWindowController {
     this.window = window
     window.setAlwaysOnTop(settings.desktop.alwaysOnTop, 'floating')
     window.setIgnoreMouseEvents(settings.desktop.clickThrough, { forward: true })
-    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false })
 
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     window.webContents.on('will-navigate', (event, url) => {
@@ -70,11 +78,35 @@ export class DesktopWindowController {
       })
     })
     window.once('ready-to-show', () => window.show())
-    window.on('close', (event) => {
-      if (!this.quitting) {
-        event.preventDefault()
-        window.hide()
+    window.on('show', () => this.lifecycle.hideLauncher())
+    window.on('restore', () => this.lifecycle.hideLauncher())
+    window.on('minimize', (event?: Electron.Event) => {
+      const behavior = this.settingsStore.get().desktop.minimizeBehavior
+      if (behavior === 'normal') {
+        this.lifecycle.hideLauncher()
+        return
       }
+      event?.preventDefault()
+      window.hide()
+      if (behavior === 'launcher' && this.settingsStore.get().desktop.launcher.enabled) {
+        this.lifecycle.showLauncher()
+      } else {
+        this.lifecycle.hideLauncher()
+      }
+    })
+    window.on('close', (event) => {
+      if (this.quitting) return
+      event.preventDefault()
+      const behavior = this.settingsStore.get().desktop.closeBehavior
+      if (behavior === 'quit') {
+        this.lifecycle.quit()
+        return
+      }
+      if (behavior === 'ask') {
+        void this.confirmClose(window)
+        return
+      }
+      this.hideForClose()
     })
     window.on('move', () => this.queueBoundsSave())
     window.on('resize', () => this.queueBoundsSave())
@@ -89,44 +121,70 @@ export class DesktopWindowController {
     return this.window
   }
 
-  show(command?: 'chat' | 'settings' | 'reminders'): void {
+  show(command?: AppCommand): void {
     const window = this.window
     if (!window) return
     if (this.settingsStore.get().desktop.clickThrough) {
       void this.setClickThrough(false)
     }
+    if (window.isMinimized()) window.restore()
     if (!window.isVisible()) window.show()
+    this.lifecycle.hideLauncher()
     window.focus()
     if (command) window.webContents.send('app:command', command)
+  }
+
+  minimize(): void {
+    const window = this.window
+    if (!window || window.isDestroyed()) return
+    const behavior = this.settingsStore.get().desktop.minimizeBehavior
+    if (behavior === 'normal') {
+      window.minimize()
+      return
+    }
+    window.hide()
+    if (behavior === 'launcher' && this.settingsStore.get().desktop.launcher.enabled) {
+      this.lifecycle.showLauncher()
+    } else {
+      this.lifecycle.hideLauncher()
+    }
   }
 
   toggleVisibility(): void {
     const window = this.window
     if (!window) return
-    if (window.isVisible()) window.hide()
+    if (window.isVisible()) this.hide()
     else this.show()
   }
 
   hide(): void {
     this.window?.hide()
+    const settings = this.settingsStore.get().desktop
+    if (settings.minimizeBehavior === 'launcher' && settings.launcher.enabled) {
+      this.lifecycle.showLauncher()
+    } else {
+      this.lifecycle.hideLauncher()
+    }
+  }
+
+  applySettings(): void {
+    const window = this.window
+    if (!window || window.isDestroyed()) return
+    const settings = this.settingsStore.get().desktop
+    window.setAlwaysOnTop(settings.alwaysOnTop, 'floating')
+    window.setIgnoreMouseEvents(settings.clickThrough, { forward: true })
   }
 
   async setClickThrough(enabled: boolean): Promise<void> {
     const window = this.window
     if (!window) return
     window.setIgnoreMouseEvents(enabled, { forward: true })
-    const settings = this.settingsStore.get()
-    await this.settingsStore.update({
-      settings: { ...settings, desktop: { ...settings.desktop, clickThrough: enabled } }
-    })
+    await this.settingsStore.updateDesktop({ clickThrough: enabled })
   }
 
   async setAlwaysOnTop(enabled: boolean): Promise<void> {
     this.window?.setAlwaysOnTop(enabled, 'floating')
-    const settings = this.settingsStore.get()
-    await this.settingsStore.update({
-      settings: { ...settings, desktop: { ...settings.desktop, alwaysOnTop: enabled } }
-    })
+    await this.settingsStore.updateDesktop({ alwaysOnTop: enabled })
   }
 
   async resetPosition(): Promise<void> {
@@ -144,16 +202,67 @@ export class DesktopWindowController {
 
   setQuitting(): void {
     this.quitting = true
+    if (this.boundsTimer) {
+      clearTimeout(this.boundsTimer)
+      this.boundsTimer = null
+    }
+  }
+
+  private hideForClose(): void {
+    this.window?.hide()
+    if (this.settingsStore.get().desktop.launcher.enabled) this.lifecycle.showLauncher()
+    else this.lifecycle.hideLauncher()
+  }
+
+  private async confirmClose(window: BrowserWindow): Promise<void> {
+    if (this.closePromptOpen) return
+    this.closePromptOpen = true
+    try {
+      const result = await dialog.showMessageBox(window, {
+        type: 'question',
+        title: 'Tutup Yachiyo Companion?',
+        message: 'Pilih apakah Yachiyo disembunyikan atau dihentikan sepenuhnya.',
+        buttons: ['Sembunyikan', 'Keluar', 'Batal'],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true
+      })
+      if (result.response === 0) this.hideForClose()
+      if (result.response === 1) this.lifecycle.quit()
+    } finally {
+      this.closePromptOpen = false
+    }
   }
 
   private queueBoundsSave(): void {
     if (this.boundsTimer) clearTimeout(this.boundsTimer)
     this.boundsTimer = setTimeout(() => {
       const window = this.window
-      if (!window || window.isDestroyed()) return
-      void this.settingsStore.updateWindowBounds(correctBounds(window.getBounds()))
+      if (!window || window.isDestroyed() || window.isMinimized()) return
+      const settings = this.settingsStore.get().desktop
+      if (!settings.rememberPosition && !settings.rememberSize) return
+      const current = correctBounds(window.getBounds())
+      const previous = settings.windowBounds ?? defaultBounds()
+      void this.settingsStore.updateWindowBounds({
+        x: settings.rememberPosition ? current.x : previous.x,
+        y: settings.rememberPosition ? current.y : previous.y,
+        width: settings.rememberSize ? current.width : previous.width,
+        height: settings.rememberSize ? current.height : previous.height
+      })
     }, 350)
   }
+}
+
+function initialBounds(settings: ReturnType<SettingsStore['get']>['desktop']): Rectangle {
+  const fallback = defaultBounds()
+  const saved = settings.windowBounds
+  if (!saved) return fallback
+  return correctBounds({
+    x: settings.rememberPosition ? saved.x : fallback.x,
+    y: settings.rememberPosition ? saved.y : fallback.y,
+    width: settings.rememberSize ? saved.width : fallback.width,
+    height: settings.rememberSize ? saved.height : fallback.height
+  })
 }
 
 function defaultBounds(): Rectangle {
