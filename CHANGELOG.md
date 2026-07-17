@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.0 — 2026-07-17
+
+Kobo RVC v2 inference release.
+
+### Added
+
+- Complete Python 3.11 RVC v2 pipeline: Edge TTS Indonesian source audio, FFmpeg mono 48 kHz normalization, TorchAudio HuBERT features, RMVPE pitch, Kobo checkpoint synthesis, FAISS retrieval, and final 48 kHz WAV output.
+- Pinned CPU runtime with automatic CUDA detection, strict runtime health, official HuBERT/RMVPE downloads with fixed origins, sizes, SHA-256 hashes, and atomic verification.
+- Basic/RVC comparison panel with pitch, index rate, protection, RMVPE, and device controls.
+- Visible runtime setup progress and errors, sentence-by-sentence long-reply processing, conversion metrics, WebAudio completion proof, and `ParamA` lip-sync measurements.
+- Dedicated frozen FAISS helper with path confinement and bounded native threading.
+
+### Reliability and security
+
+- RVC failures are contained in the sidecar and automatically fall back to Basic TTS without crashing Electron.
+- PyTorch checkpoint and runtime weights load with `weights_only=True`; model files, ZIPs, IPC, secrets, renderer sandboxing, and path boundaries remain fail-closed.
+- Fixed sidecar replacement so stale child exits cannot overwrite a newly started sidecar.
+- Added malformed/short/silent/missing-file, runtime hash, fallback, sentence queue, playback, source Electron, packaged Electron, and installed NSIS regressions.
+
+### Verified performance on the release machine
+
+- Final frozen CPU proof: 7.49 s cold engine load, 15.56 s cold conversion, 12.60 s warm conversion, and approximately 1.73 GB peak sidecar RAM.
+- The proof generated non-silent mono 48 kHz Kobo WAV files. Installed-app playback and final release hashes are recorded in `FINAL_VERIFICATION.md`.
+
 ## 0.1.1 — 2026-07-17
 
 Asset-selection reliability release.

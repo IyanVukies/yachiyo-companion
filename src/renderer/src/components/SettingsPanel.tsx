@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   BadgeInfo,
   Bell,
@@ -37,7 +37,9 @@ type Props = {
   onChooseAsset: (request: AssetSelectionRequest) => Promise<AssetDialogResult>
   onApplyAsset: (token: string) => Promise<AssetApplyResult>
   onRescan: () => Promise<AssetStatus>
-  onVoiceTest: (settings: SettingsView) => void
+  onVoiceTest: (settings: SettingsView, mode: 'basic' | 'rvc') => Promise<void>
+  onVoiceRuntimeSetup: () => Promise<VoiceCapabilities>
+  onVoiceRefresh: () => Promise<VoiceCapabilities>
 }
 
 type Section = 'connection' | 'voice' | 'desktop' | 'proactive' | 'assets' | 'privacy' | 'about'
@@ -53,12 +55,35 @@ const SECTIONS: { id: Section; label: string; icon: typeof Bot }[] = [
 ]
 
 export function SettingsPanel(props: Props): React.JSX.Element {
+  const onVoiceRefresh = props.onVoiceRefresh
+  const voiceRuntimeState = props.voice.runtime.state
   const [draft, setDraft] = useState(props.settings)
   const [section, setSection] = useState<Section>('connection')
   const [apiKey, setApiKey] = useState('')
   const [feedback, setFeedback] = useState('')
   const [connectionResult, setConnectionResult] = useState<ConnectionTestResult | null>(null)
   const [busy, setBusy] = useState(false)
+  const [voiceTestBusy, setVoiceTestBusy] = useState<'basic' | 'rvc' | null>(null)
+
+  useEffect(() => {
+    if (section !== 'voice' || !['checking', 'downloading'].includes(voiceRuntimeState)) {
+      return
+    }
+    let active = true
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const poll = (): void => {
+      timer = setTimeout(() => {
+        void onVoiceRefresh().finally(() => {
+          if (active) poll()
+        })
+      }, 750)
+    }
+    poll()
+    return () => {
+      active = false
+      if (timer) clearTimeout(timer)
+    }
+  }, [onVoiceRefresh, section, voiceRuntimeState])
 
   const save = async (): Promise<void> => {
     setBusy(true)
@@ -243,6 +268,59 @@ export function SettingsPanel(props: Props): React.JSX.Element {
 
         {section === 'voice' ? (
           <SettingsSection title="Suara" description={props.voice.detail}>
+            <div
+              className="voice-runtime-card"
+              data-state={props.voice.runtime.state}
+              aria-live="polite"
+              data-testid="voice-runtime-status"
+            >
+              <div className="voice-runtime-heading">
+                <div>
+                  <strong>Runtime RVC · {runtimeStateLabel(props.voice.runtime.state)}</strong>
+                  <span>{props.voice.runtime.stage}</span>
+                </div>
+                <span className="runtime-device">{props.voice.deviceInfo.selected}</span>
+              </div>
+              {props.voice.runtime.state === 'downloading' ||
+              props.voice.runtime.state === 'checking' ? (
+                <div className="runtime-progress">
+                  <progress max="100" value={props.voice.runtime.progress} />
+                  <span>
+                    {props.voice.runtime.progress.toFixed(1)}% ·{' '}
+                    {formatBytes(props.voice.runtime.downloadedBytes)} /{' '}
+                    {formatBytes(props.voice.runtime.totalBytes)}
+                  </span>
+                </div>
+              ) : null}
+              <div className="runtime-assets">
+                {Object.entries(props.voice.runtime.assets).map(([id, asset]) => (
+                  <span key={id} data-ready={asset.state === 'ready'}>
+                    {asset.state === 'ready' ? '✓' : '○'} {asset.label}
+                  </span>
+                ))}
+              </div>
+              {props.voice.runtime.state === 'setup-required' ||
+              props.voice.runtime.state === 'error' ? (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setBusy(true)
+                    setFeedback('Penyiapan runtime RVC dimulai…')
+                    void props.onVoiceRuntimeSetup().finally(() => setBusy(false))
+                  }}
+                >
+                  <RefreshCw size={15} aria-hidden="true" /> Siapkan RVC
+                </button>
+              ) : null}
+              {props.voice.runtime.error ? (
+                <p className="runtime-error">
+                  Penyiapan gagal ({props.voice.runtime.error}). Periksa koneksi lalu coba lagi;
+                  Basic TTS tetap tersedia.
+                </p>
+              ) : null}
+            </div>
             <div className="segmented-control three" aria-label="Mode suara">
               {(['rvc', 'basic', 'disabled'] as const).map((mode) => (
                 <button
@@ -283,7 +361,7 @@ export function SettingsPanel(props: Props): React.JSX.Element {
               />
             </label>
             <div className="rvc-settings" data-enabled={draft.voice.mode === 'rvc'}>
-              <p>Eksperimen voice lokal tidak resmi · personal use only</p>
+              <p>Konversi lokal Kobo RVC v2 · RMVPE · HuBERT · 48 kHz</p>
               <label className="range-field labelled">
                 <span>
                   Pitch RVC <b>{draft.voice.rvc.pitch}</b>
@@ -326,14 +404,105 @@ export function SettingsPanel(props: Props): React.JSX.Element {
                   }
                 />
               </label>
+              <label className="range-field labelled">
+                <span>
+                  Protection <b>{draft.voice.rvc.protect.toFixed(2)}</b>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="0.5"
+                  step="0.01"
+                  value={draft.voice.rvc.protect}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      voice: {
+                        ...draft.voice,
+                        rvc: { ...draft.voice.rvc, protect: Number(event.target.value) }
+                      }
+                    })
+                  }
+                />
+              </label>
+              <div className="two-fields">
+                <label className="field">
+                  <span>Perangkat inferensi</span>
+                  <select
+                    value={draft.voice.rvc.device}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        voice: {
+                          ...draft.voice,
+                          rvc: {
+                            ...draft.voice.rvc,
+                            device: event.target.value as 'auto' | 'cpu' | 'cuda'
+                          }
+                        }
+                      })
+                    }
+                  >
+                    <option value="auto">Auto ({props.voice.deviceInfo.selected})</option>
+                    <option value="cpu">CPU</option>
+                    <option value="cuda" disabled={!props.voice.deviceInfo.cudaAvailable}>
+                      CUDA
+                      {props.voice.deviceInfo.cudaName
+                        ? ` · ${props.voice.deviceInfo.cudaName}`
+                        : ''}
+                    </option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Ekstraksi pitch</span>
+                  <input value="RMVPE" readOnly />
+                </label>
+              </div>
             </div>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => props.onVoiceTest(draft)}
-            >
-              <Volume2 size={15} aria-hidden="true" /> Tes suara
-            </button>
+            <div className="voice-comparison" aria-label="Perbandingan suara">
+              <div>
+                <strong>Bandingkan suara</strong>
+                <span>Keduanya memakai kalimat dan voice Edge TTS yang sama.</span>
+              </div>
+              <div>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={voiceTestBusy !== null}
+                  onClick={() => {
+                    setVoiceTestBusy('basic')
+                    setFeedback('Memutar tes Basic TTS…')
+                    void props
+                      .onVoiceTest(draft, 'basic')
+                      .then(() => setFeedback('Tes Basic selesai diputar.'))
+                      .finally(() => setVoiceTestBusy(null))
+                  }}
+                >
+                  <Volume2 size={15} aria-hidden="true" />
+                  {voiceTestBusy === 'basic' ? 'Memproses…' : 'Tes Basic'}
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={voiceTestBusy !== null || !props.voice.rvc}
+                  onClick={() => {
+                    setVoiceTestBusy('rvc')
+                    setFeedback('Mengonversi dan memutar tes Kobo RVC…')
+                    void props
+                      .onVoiceTest(draft, 'rvc')
+                      .then(() => setFeedback('Tes RVC selesai diputar.'))
+                      .finally(() => setVoiceTestBusy(null))
+                  }}
+                >
+                  <Volume2 size={15} aria-hidden="true" />
+                  {voiceTestBusy === 'rvc' ? 'Mengonversi…' : 'Tes RVC Kobo'}
+                </button>
+              </div>
+              {!props.voice.rvc ? (
+                <small>RVC aktif setelah runtime dan folder Kobo sama-sama berstatus ready.</small>
+              ) : null}
+            </div>
+            {props.voice.lastMetrics ? <VoiceMetricsPanel voice={props.voice} /> : null}
           </SettingsSection>
         ) : null}
 
@@ -568,7 +737,7 @@ export function SettingsPanel(props: Props): React.JSX.Element {
         ) : null}
 
         {section === 'about' ? (
-          <SettingsSection title="Tentang Yachiyo" description="Personal local build · versi 0.1.1">
+          <SettingsSection title="Tentang Yachiyo" description="Personal local build · versi 0.2.0">
             <div className="about-copy">
               <p>
                 Yachiyo Companion adalah lapisan desktop untuk Hermes Agent. Hermes tetap menjadi
@@ -612,6 +781,71 @@ export function SettingsPanel(props: Props): React.JSX.Element {
       </footer>
     </section>
   )
+}
+
+function VoiceMetricsPanel({ voice }: { voice: VoiceCapabilities }): React.JSX.Element {
+  const metrics = voice.lastMetrics
+  if (!metrics) return <></>
+  return (
+    <div className="voice-metrics" data-testid="voice-metrics">
+      <div>
+        <strong>Metrik konversi terakhir</strong>
+        <span>{metrics.deviceName ?? metrics.device ?? voice.device}</span>
+      </div>
+      <dl>
+        <div>
+          <dt>Cold-start</dt>
+          <dd>{formatMilliseconds(metrics.coldStartMs)}</dd>
+        </div>
+        <div>
+          <dt>Konversi</dt>
+          <dd>{formatMilliseconds(metrics.conversionMs)}</dd>
+        </div>
+        <div>
+          <dt>Audio</dt>
+          <dd>{formatMilliseconds(metrics.audioDurationMs)}</dd>
+        </div>
+        <div>
+          <dt>CPU</dt>
+          <dd>{metrics.cpuPercent === undefined ? '—' : `${metrics.cpuPercent.toFixed(1)}%`}</dd>
+        </div>
+        <div>
+          <dt>Peak RAM</dt>
+          <dd>{metrics.peakRamMb === undefined ? '—' : `${metrics.peakRamMb.toFixed(1)} MB`}</dd>
+        </div>
+        <div>
+          <dt>FAISS</dt>
+          <dd>{formatMilliseconds(metrics.indexMs)}</dd>
+        </div>
+      </dl>
+      {voice.lastPlayback ? (
+        <p className="playback-proof" data-source={voice.lastPlayback.source}>
+          <Check size={14} aria-hidden="true" /> Playback WebAudio selesai · lip-sync puncak{' '}
+          {voice.lastPlayback.maxLipSync.toFixed(2)}
+        </p>
+      ) : (
+        <p className="playback-proof pending">Audio dibuat; menunggu playback selesai.</p>
+      )}
+    </div>
+  )
+}
+
+function runtimeStateLabel(state: VoiceCapabilities['runtime']['state']): string {
+  if (state === 'ready') return 'ready'
+  if (state === 'downloading') return 'mengunduh'
+  if (state === 'checking') return 'memeriksa'
+  if (state === 'error') return 'gagal'
+  return 'perlu setup'
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0 MB'
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatMilliseconds(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return '—'
+  return value >= 1_000 ? `${(value / 1_000).toFixed(2)} dtk` : `${value.toFixed(1)} ms`
 }
 
 function SettingsSection({

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "runtimeVersion": "0.2.0",
+  "python": "3.11",
+  "rvc": {
+    "tag": "2.2.231006",
+    "commit": "9f2f0559e6932c10c48642d404e7d2e771d9db43",
+    "url": "https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI"
+  },
+  "assets": [
+    {
+      "id": "hubert",
+      "label": "HuBERT Base",
+      "filename": "hubert_fairseq_base_ls960.pth",
+      "url": "https://download.pytorch.org/torchaudio/models/hubert_fairseq_base_ls960.pth",
+      "sha256": "2809382725ea3b9b3d62c8e94168d7587923603cca5e05e50ed3fb65502c5b75",
+      "bytes": 377565405,
+      "license": "MIT",
+      "source": "TorchAudio 2.7.1 HUBERT_BASE"
+    },
+    {
+      "id": "rmvpe",
+      "label": "RMVPE",
+      "filename": "rmvpe.pt",
+      "url": "https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/0d7ebae452fb102c695b08f4e6f546be00603425/rmvpe.pt",
+      "sha256": "6d62215f4306e3ca278246188607209f09af3dc77ed4232efdd069798c4ec193",
+      "bytes": 181184272,
+      "license": "MIT",
+      "source": "RVC official model repository commit 0d7ebae452fb102c695b08f4e6f546be00603425"
+    }
+  ],
+  "packages": {
+    "torch": "2.7.1+cpu",
+    "torchaudio": "2.7.1+cpu",
+    "faiss-cpu": "1.8.0",
+    "numpy": "1.26.4",
+    "scipy": "1.13.1",
+    "soundfile": "0.12.1",
+    "psutil": "6.1.1",
+    "edge-tts": "7.2.8",
+    "fastapi": "0.128.0",
+    "uvicorn": "0.40.0",
+    "pydantic": "2.12.5"
+  }
+}

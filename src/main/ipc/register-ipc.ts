@@ -16,6 +16,7 @@ import {
   reminderScheduleSchema,
   requestIdSchema,
   settingsUpdateSchema,
+  voicePlaybackReportSchema,
   voiceRequestSchema
 } from '../../shared/schemas'
 import type {
@@ -352,10 +353,23 @@ export function registerIpc(context: Context): void {
     return { ok: true, message: 'Respons dihentikan.' }
   })
 
-  handle(IPC.voiceCapabilities, context, () => context.voiceSidecar.capabilities())
+  handle(IPC.voiceCapabilities, context, async () => {
+    const capabilities = await context.voiceSidecar.refreshCapabilities()
+    context.setAssetStatus(context.assetValidator.refreshRuntime(context.getAssetStatus()))
+    return capabilities
+  })
+  handle(IPC.voiceRuntimeSetup, context, async () => {
+    const capabilities = await context.voiceSidecar.setupRuntime()
+    context.setAssetStatus(context.assetValidator.refreshRuntime(context.getAssetStatus()))
+    return capabilities
+  })
   handle(IPC.voiceSynthesize, context, (_event, input: unknown) => {
     const request = voiceRequestSchema.parse(input)
     return context.voiceSidecar.synthesize(request)
+  })
+  handle(IPC.voicePlaybackReport, context, (_event, input: unknown): OperationResult => {
+    const report = voicePlaybackReportSchema.parse(input)
+    return context.voiceSidecar.reportPlayback(report)
   })
   handle(IPC.voiceStop, context, (): OperationResult => {
     context.voiceSidecar.stopCurrent()

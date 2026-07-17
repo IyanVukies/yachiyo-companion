@@ -51,7 +51,7 @@ export function useVoiceQueue({ onAvatarState, onLipSync }: VoiceQueueOptions): 
             rvc: voice.rvc
           })
           if (token !== generation.current) return
-          await playResult(
+          const playback = await playResult(
             result,
             chunk,
             voice,
@@ -61,6 +61,13 @@ export function useVoiceQueue({ onAvatarState, onLipSync }: VoiceQueueOptions): 
             animationFrame,
             onLipSync
           )
+          if (result.requestId && playback) {
+            await window.yachiyo.reportVoicePlayback({
+              requestId: result.requestId,
+              durationMs: playback.durationMs,
+              maxLipSync: playback.maxLipSync
+            })
+          }
         }
       } finally {
         if (token === generation.current) {
@@ -86,15 +93,15 @@ async function playResult(
   audioRef: React.RefObject<HTMLAudioElement | null>,
   frameRef: React.RefObject<number | null>,
   onLipSync: (value: number) => void
-): Promise<void> {
+): Promise<PlaybackMeasurement | null> {
   if (result.source === 'browser-basic' || !result.audioBase64 || !result.mimeType) {
     await playBrowserSpeech(text, voice, token, generation, frameRef, onLipSync)
-    return
+    return null
   }
   const bytes = Uint8Array.from(atob(result.audioBase64), (character) => character.charCodeAt(0))
   const url = URL.createObjectURL(new Blob([bytes], { type: result.mimeType }))
   try {
-    await playAudioElement(url, token, generation, audioRef, frameRef, onLipSync)
+    return await playAudioElement(url, token, generation, audioRef, frameRef, onLipSync)
   } finally {
     URL.revokeObjectURL(url)
   }
@@ -107,10 +114,12 @@ async function playAudioElement(
   audioRef: React.RefObject<HTMLAudioElement | null>,
   frameRef: React.RefObject<number | null>,
   onLipSync: (value: number) => void
-): Promise<void> {
+): Promise<PlaybackMeasurement> {
   const element = new Audio(url)
   audioRef.current = element
   let context: AudioContext | null = null
+  let maximumLipSync = 0
+  const startedAt = performance.now()
   try {
     context = new AudioContext()
     const analyser = context.createAnalyser()
@@ -126,7 +135,9 @@ async function playAudioElement(
         const normalized = (value - 128) / 128
         sum += normalized * normalized
       }
-      onLipSync(Math.min(1, Math.sqrt(sum / samples.length) * 4.2))
+      const lipSync = Math.min(1, Math.sqrt(sum / samples.length) * 4.2)
+      maximumLipSync = Math.max(maximumLipSync, lipSync)
+      onLipSync(lipSync)
       frameRef.current = requestAnimationFrame(update)
     }
     await element.play()
@@ -137,6 +148,10 @@ async function playAudioElement(
         once: true
       })
     })
+    return {
+      durationMs: Math.max(0, performance.now() - startedAt),
+      maxLipSync: maximumLipSync
+    }
   } finally {
     element.pause()
     audioRef.current = null
@@ -145,6 +160,11 @@ async function playAudioElement(
     onLipSync(0)
     await context?.close().catch(() => undefined)
   }
+}
+
+type PlaybackMeasurement = {
+  durationMs: number
+  maxLipSync: number
 }
 
 async function playBrowserSpeech(

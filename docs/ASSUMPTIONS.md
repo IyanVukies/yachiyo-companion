@@ -16,13 +16,13 @@
 - FFmpeg and FFprobe are not installed system-wide.
 - NVIDIA CUDA tooling is not visible; the detected display adapter is Intel Iris Xe.
 - Python 3.13.3 and Python 3.11.9 are available. RVC packages commonly target Python 3.10/3.11, so 3.11 is the candidate runtime.
-- The supplied Kobo package lacks HuBERT/ContentVec, RMVPE, FFmpeg, and any license/readme.
-- The supplied Mao package lacks Cubism Core for Web.
+- The supplied Kobo package lacks HuBERT/ContentVec, RMVPE, FFmpeg, and any license/readme; version 0.2.0 supplies the executable runtime and acquires only pinned HuBERT/RMVPE data assets.
+- An official Cubism SDK/Core file is now present separately and Mao rendering works; the Core remains an external license-bound asset.
 
 ## External dependencies that cannot be invented
 
 - Real Hermes URL, model name, API key, and any Hermes-specific deviations from the OpenAI protocol.
-- User acceptance of Live2D's proprietary/open SDK license and a legitimately downloaded Cubism Core for Web runtime.
+- Continued user authorization to use the separately obtained Live2D Cubism SDK/Core and Mao model.
 - A verified redistribution/usage license for the Kobo checkpoint and its source voice.
 - Optional network availability for Edge TTS and large RVC runtime/model dependency downloads.
 - A code-signing certificate, if a trusted signed installer is desired later.

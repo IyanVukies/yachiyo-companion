@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$python = Join-Path $root '.venv-sidecar\Scripts\python.exe'
+$python = Join-Path $root '.venv-rvc\Scripts\python.exe'
 $sidecarRoot = Join-Path $root 'src\sidecar'
 $cacheRoot = [IO.Path]::GetFullPath((Join-Path $root '.cache'))
 $runRoot = [IO.Path]::GetFullPath((Join-Path $cacheRoot ('sidecar-tests-' + [Guid]::NewGuid().ToString('N'))))
@@ -14,7 +14,7 @@ if (-not $runRoot.StartsWith($expectedPrefix, [StringComparison]::OrdinalIgnoreC
 }
 
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
-  throw 'Python sidecar environment is missing. Follow START-HERE.md to bootstrap .venv-sidecar.'
+  throw 'Python 3.11 RVC sidecar environment is missing. Follow START-HERE.md to bootstrap .venv-rvc.'
 }
 
 $env:PYTHONPATH = $sidecarRoot

@@ -30,7 +30,9 @@ export const IPC = {
   chatCancel: 'chat:cancel',
   chatEvent: 'chat:event',
   voiceCapabilities: 'voice:capabilities',
+  voiceRuntimeSetup: 'voice:runtime-setup',
   voiceSynthesize: 'voice:synthesize',
+  voicePlaybackReport: 'voice:playback-report',
   voiceStop: 'voice:stop',
   windowClickThrough: 'window:click-through',
   windowAlwaysOnTop: 'window:always-on-top',
@@ -72,6 +74,7 @@ export type YachiyoApi = {
   cancelChat: (requestId: string) => Promise<OperationResult>
   onChatEvent: (callback: (event: ChatEvent) => void) => () => void
   getVoiceCapabilities: () => Promise<VoiceCapabilities>
+  setupVoiceRuntime: () => Promise<VoiceCapabilities>
   synthesizeVoice: (payload: {
     text: string
     mode: 'rvc' | 'basic' | 'disabled'
@@ -80,6 +83,11 @@ export type YachiyoApi = {
     pitch: number
     rvc: AppSettings['voice']['rvc']
   }) => Promise<VoiceResult>
+  reportVoicePlayback: (payload: {
+    requestId: string
+    durationMs: number
+    maxLipSync: number
+  }) => Promise<OperationResult>
   stopVoice: () => Promise<OperationResult>
   setClickThrough: (enabled: boolean) => Promise<OperationResult>
   setAlwaysOnTop: (enabled: boolean) => Promise<OperationResult>

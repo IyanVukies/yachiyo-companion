@@ -29,7 +29,7 @@ The file must be the official Web SDK file named exactly `live2dcubismcore.min.j
 
 ## Basic TTS works but RVC does not
 
-That is the verified state of this release. The Kobo checkpoint/index are present, but an inference package, HuBERT/ContentVec weights, and RMVPE weights were not supplied. Yachiyo fails closed to Basic TTS. See [VOICE-MODEL-GUIDE.md](VOICE-MODEL-GUIDE.md).
+Open **Atur → Suara** and inspect the runtime status. If it says **perlu setup**, choose **Siapkan RVC** and wait for both HuBERT and RMVPE to reach 100%. If setup fails, keep Basic enabled and read the visible hash/network error. Then verify the Kobo checkpoint/index under **Atur → Aset**, leave the device on `auto` or `cpu`, and choose **Tes RVC Kobo**. Yachiyo always fails back to Basic rather than crashing. See [VOICE-MODEL-GUIDE.md](VOICE-MODEL-GUIDE.md).
 
 ## Hermes is offline
 
@@ -59,16 +59,16 @@ Click the tray icon, then use **Atur → Desktop → Reset posisi**. Display cha
 
 - Keep avatar scale near 1.0.
 - Use the fallback avatar if the GPU driver struggles with WebGL.
-- Disable voice or RVC experimentation.
+- Use Basic TTS, shorten replies, or leave RVC on CPU/automatic mode while other heavy applications are closed.
 - Update the Intel graphics driver from the PC manufacturer.
 
 ## Audio is delayed
 
-Edge TTS and optional conversion happen before playback. Network latency is the common cause. Shorter replies reduce delay. RVC is deliberately unavailable rather than adding an unverified slow CPU path.
+Edge TTS and RVC conversion happen before each sentence plays. Network latency and CPU inference both contribute. The verified CPU path can take roughly 13–16 seconds for a 4–6 second sentence after the engine is loaded; the first request also loads the models. Shorter sentences and Basic mode reduce delay.
 
 ## Windows warns about the installer
 
-Version 0.1.1 is unsigned. Verify the installer filename and SHA-256 hash in `release\checksums.txt`. Do not bypass a warning if the hash differs.
+Version 0.2.0 is unsigned. Verify the installer filename and SHA-256 hash in `release\checksums.txt`. Do not bypass a warning if the hash differs.
 
 ## Reset everything
 

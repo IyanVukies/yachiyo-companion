@@ -95,3 +95,33 @@
 **Decision:** A structurally valid Mao source without Core reports `core-missing`; `ready` is reserved for a valid Mao source plus a compatible selected official Core file.
 
 **Reason:** Structural model success must not imply that Live2D rendering can start.
+
+## D-017 — RVC implementation is pinned and sidecar-only
+
+**Decision:** Vendor the compatible inference subset from official RVC release `2.2.231006` at commit `9f2f0559e6932c10c48642d404e7d2e771d9db43`; run PyTorch, HuBERT, RMVPE, FAISS, and Kobo synthesis only in Python.
+
+**Reason:** Electron and the sandboxed renderer must remain isolated from native inference crashes, heavy imports, checkpoint parsing, and model paths.
+
+## D-018 — Runtime setup downloads data, not executable code
+
+**Decision:** Freeze the exact Python/native runtime into the installer. The settings setup action may fetch only the manifest-pinned HuBERT and RMVPE data files from allowlisted HTTPS origins after exact size and SHA-256 verification.
+
+**Reason:** Visible setup progress is required, but downloading mutable code or unverified weights would break the audited release boundary.
+
+## D-019 — CPU is the distributable baseline
+
+**Decision:** Ship PyTorch/TorchAudio `2.7.1+cpu`, expose `auto`, `cpu`, and `cuda`, and detect CUDA at runtime without claiming a CUDA build on this machine.
+
+**Reason:** CPU works on the verified Intel host and avoids adding a multi-gigabyte untested CUDA payload. Explicit CUDA selection fails closed when unavailable.
+
+## D-020 — FAISS uses an isolated bounded helper
+
+**Decision:** Package FAISS in a separate frozen process, confine all query/output files to a one-use temporary root, sanitize the Windows frozen-process DLL boundary, and cap FAISS/OpenBLAS/OpenMP to one thread.
+
+**Reason:** Loading FAISS beside Torch caused native-runtime contention. Isolation prevents Electron crashes; the thread bound prevents multi-gigabyte oversubscription while preserving normal Torch CPU parallelism.
+
+## D-021 — Playback proof is correlated in Electron main
+
+**Decision:** Electron issues a random request ID with synthesized audio and accepts playback duration/lip-sync metrics only once for that pending ID after WebAudio reaches `ended`.
+
+**Reason:** Renderer-visible metrics should prove that returned bytes were actually played and drove Mao `ParamA`, without trusting arbitrary renderer claims.

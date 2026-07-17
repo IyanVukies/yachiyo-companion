@@ -1,5 +1,7 @@
 node_modules
 .cache
+.pytest_cache
+**/.pytest_cache
 .venv
 .venv-*
 build/sidecar

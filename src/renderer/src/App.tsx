@@ -20,7 +20,8 @@ import type {
   NormalizedError,
   ProactiveEvent,
   Reminder,
-  SettingsView
+  SettingsView,
+  VoiceCapabilities
 } from '@shared/types'
 
 import { AvatarLab } from './components/AvatarLab'
@@ -74,6 +75,12 @@ export function App(): React.JSX.Element {
     onAvatarState: setAvatarState,
     onLipSync: setLipSync
   })
+  const refreshVoice = useCallback(async (): Promise<VoiceCapabilities> => {
+    const voice = await window.yachiyo.getVoiceCapabilities()
+    const nextStatus = await window.yachiyo.getAppStatus()
+    setStatus({ ...nextStatus, voice })
+    return voice
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -452,7 +459,20 @@ export function App(): React.JSX.Element {
             setStatus(await window.yachiyo.getAppStatus())
             return assets
           }}
-          onVoiceTest={(view) => void speak('Halo, ini tes suara Yachiyo.', view.voice)}
+          onVoiceTest={async (view, mode) => {
+            await speak('Halo, ini perbandingan suara Yachiyo dalam bahasa Indonesia.', {
+              ...view.voice,
+              mode,
+              rvc: { ...view.voice.rvc, f0Method: 'rmvpe' }
+            })
+            await refreshVoice()
+          }}
+          onVoiceRuntimeSetup={async () => {
+            const voice = await window.yachiyo.setupVoiceRuntime()
+            setStatus((current) => (current ? { ...current, voice } : current))
+            return voice
+          }}
+          onVoiceRefresh={refreshVoice}
         />
       ) : null}
 

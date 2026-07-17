@@ -22,7 +22,7 @@ Actual root: `assets/source/mao_en/`
 - Every path referenced by the actual model JSON exists and resolves beneath the runtime root.
 - Editor-only files `mao_pro_t06.cmo3` and `mao_pro_t06.can3` are present at source root and must not be packaged.
 - `ReadMe.txt` identifies the model as “Niziiro Mao (PRO Version),” credits Live2D Inc. for illustration/modeling, and requires agreement to Live2D's Free Material License Agreement and Terms of Use.
-- Cubism Core for Web is not included.
+- Official Cubism Core for Web is present separately at `assets/source/CubismSdkForWeb-5-r.5/CubismSdkForWeb-5-r.5/Core/live2dcubismcore.min.js` (228,042 bytes; SHA-256 `8741F739779B5D5210872BD3D7D99F0F1E56E6C87409E7D26D6BB4B80AA1EF47`). It remains external and license-bound.
 
 Key SHA-256 values:
 
@@ -38,9 +38,9 @@ Actual root: `assets/source/kobo/kobo/` (one extra nested `kobo` directory)
 - Index: `added_IVF454_Flat_nprobe_1_kobov2_v2.index`, 55,948,339 bytes
 - The checkpoint is a PyTorch ZIP archive. It was inspected structurally without executing or unsafely unpickling it.
 - Serialized metadata reports `version: v2`, `sr: 48k`, `f0: 1`, and `info: 500epoch`.
-- The FAISS index has binary header text `IwFl` / `IxF2`; full readability still requires a compatible FAISS runtime.
+- The FAISS index loads as a trained 768-dimension `IndexIVFFlat` with 17,711 vectors in the pinned FAISS CPU runtime.
 - No Kobo license, attribution, or source authorization file is present. It remains an unofficial personal local experiment and is excluded from distributable payloads.
-- Required inference companions are absent: HuBERT/ContentVec, RMVPE weights, and a packaged RVC inference runtime.
+- HuBERT and RMVPE are intentionally absent from the supplied Kobo folder. Version 0.2.0 acquires their exact pinned data files through the settings setup flow; the audited RVC implementation is frozen into the Python sidecar.
 
 Key SHA-256 values:
 

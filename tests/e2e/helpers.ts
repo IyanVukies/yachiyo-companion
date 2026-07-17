@@ -1,5 +1,14 @@
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -39,6 +48,7 @@ export async function createExternalAssetFixtures(projectRoot: string): Promise<
   maoZip: string
   invalidMao: string
   koboParent: string
+  cubismCore: string
   cleanup: () => void
 }> {
   const root = mkdtempSync(join(tmpdir(), 'yachiyo-assets-'))
@@ -60,6 +70,10 @@ export async function createExternalAssetFixtures(projectRoot: string): Promise<
     maoZip,
     invalidMao,
     koboParent,
+    cubismCore: resolve(
+      projectRoot,
+      'assets/source/CubismSdkForWeb-5-r.5/CubismSdkForWeb-5-r.5/Core/live2dcubismcore.min.js'
+    ),
     cleanup: () => {
       for (const link of [maoParent, koboParent]) {
         try {
@@ -71,6 +85,23 @@ export async function createExternalAssetFixtures(projectRoot: string): Promise<
       rmSync(root, { recursive: true, force: true })
     }
   }
+}
+
+export function preparePinnedVoiceRuntime(projectRoot: string, dataDirectory: string): string {
+  const sourceRoot = resolve(projectRoot, '.runtime-cache/models')
+  const targetRoot = resolve(dataDirectory, 'voice-runtime/0.2.0')
+  mkdirSync(targetRoot, { recursive: true })
+  for (const filename of ['hubert_fairseq_base_ls960.pth', 'rmvpe.pt']) {
+    const source = join(sourceRoot, filename)
+    const target = join(targetRoot, filename)
+    if (!existsSync(source)) throw new Error(`Pinned runtime fixture missing: ${source}`)
+    try {
+      linkSync(source, target)
+    } catch {
+      copyFileSync(source, target)
+    }
+  }
+  return targetRoot
 }
 
 function testMaoEntries(): { name: string; data: Buffer | string }[] {

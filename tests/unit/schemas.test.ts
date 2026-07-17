@@ -4,6 +4,7 @@ import {
   chatStartSchema,
   defaultSettings,
   settingsSchema,
+  voicePlaybackReportSchema,
   voiceRequestSchema
 } from '../../src/shared/schemas'
 
@@ -47,6 +48,28 @@ describe('IPC boundary schemas', () => {
           ...defaultSettings.voice.rvc,
           pitch: 99
         }
+      })
+    ).toThrow()
+  })
+
+  it('strictly validates renderer playback proof', () => {
+    expect(
+      voicePlaybackReportSchema.parse({
+        requestId: '00000000-0000-4000-8000-000000000220',
+        durationMs: 2_020,
+        maxLipSync: 0.74
+      })
+    ).toEqual({
+      requestId: '00000000-0000-4000-8000-000000000220',
+      durationMs: 2_020,
+      maxLipSync: 0.74
+    })
+    expect(() =>
+      voicePlaybackReportSchema.parse({
+        requestId: 'not-a-request-id',
+        durationMs: -1,
+        maxLipSync: 4,
+        injected: true
       })
     ).toThrow()
   })

@@ -158,7 +158,7 @@ test('onboarding, secure bridge, mock chat, and settings work in Electron', asyn
     await expect(koboAssets.getByTestId('kobo-selected-path')).toContainText(
       assetFixtures.koboParent
     )
-    await expect(koboAssets.getByText('runtime-missing')).toBeVisible()
+    await expect(koboAssets.getByText('ready')).toBeVisible({ timeout: 30_000 })
     await expect(koboAssets.getByText('kobov2.pth')).toBeVisible()
     await page.screenshot({ path: join(screenshots, '04-asset-status.png') })
 

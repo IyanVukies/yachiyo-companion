@@ -18,8 +18,10 @@ Yachiyo is a local personal desktop application with optional network services. 
 - Diagnostics redact remote hostnames, absolute asset paths, secrets, conversations, and audio.
 - Custom asset protocol is read-only, extension-allowlisted, root-confined, and traversal-tested.
 - ZIP extraction rejects traversal, excessive entry counts, and expanded payloads over 2 GiB.
-- PyTorch metadata is inspected structurally without unpickling or executing the checkpoint.
+- PyTorch checkpoint and runtime weights load with `weights_only=True`; strict version, tensor-count, shape, size, and architecture checks run before inference.
 - Voice sidecar binds only to loopback, uses a per-run random token/port, validates host/token/body, and invokes fixed FFmpeg paths without a shell.
+- RVC and FAISS run only in isolated Python processes. FAISS input/output paths are confined to a one-use temporary root, and native worker threads are bounded to prevent resource exhaustion.
+- Runtime setup downloads only the two data assets in the signed source manifest, from an HTTPS host allowlist, with redirect validation, exact byte counts, SHA-256 verification, temporary `.part` files, and atomic activation.
 - Hermes structured avatar metadata is allowlisted; it cannot execute commands.
 - Click-through has a global recovery shortcut: **Ctrl+Shift+F12**.
 
@@ -28,6 +30,7 @@ Yachiyo is a local personal desktop application with optional network services. 
 - Mock mode: chat remains on the local random-port mock server.
 - Hermes mode: chat content is sent to the configured Hermes URL.
 - Basic Edge TTS: text is sent to Microsoft's online speech service by the `edge-tts` provider. Choose **Suara → Mati** if this is not acceptable.
+- RVC conversion after Edge synthesis is local; Kobo audio, HuBERT features, RMVPE pitch, and final WAV files are not uploaded by Yachiyo.
 - Browser/Windows speech behavior depends on installed voices and Windows configuration.
 - No analytics, telemetry, screen capture, global activity logging, camera access, or automatic update service is included.
 
@@ -41,9 +44,10 @@ Only use assets from a source you trust. Mao and Kobo remain external. Yachiyo v
 
 ## Release risks
 
-- Version 0.1.0 is not Authenticode-signed, so SmartScreen may warn.
-- The proprietary Cubism Core was not supplied or tested.
-- RVC inference dependencies are absent; no checkpoint is executed.
+- Version 0.2.0 is not Authenticode-signed, so SmartScreen may warn.
+- Cubism Core and Mao remain external licensed assets and are not redistributed by the installer.
+- Kobo has no supplied license/provenance document. Actual local inference is verified for this personal profile, but that does not grant redistribution or impersonation rights.
+- The audited installer baseline contains CPU PyTorch. CUDA requires a separately compatible trusted runtime and is not claimed for this release machine.
 - The installer is a personal profile, not a public redistribution approval.
 - Bundled FFmpeg is GPL-3.0-or-later; its license/readme are included. Public redistribution requires a complete license/source-compliance review.
 

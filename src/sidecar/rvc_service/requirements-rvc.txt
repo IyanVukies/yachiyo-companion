@@ -1,3 +1,10 @@
-# Optional personal-use runtime. Install only into the Python 3.11 RVC environment.
-rvc-python==0.1.5
-
+# Audited Windows x64 / CPython 3.11 RVC v2 runtime.
+# Install together with requirements.txt. The complete artifact hashes are in
+# requirements-runtime-windows-py311.lock; PyTorch wheels use its official CPU index.
+torch==2.7.1+cpu
+torchaudio==2.7.1+cpu
+faiss-cpu==1.8.0
+numpy==1.26.4
+scipy==1.13.1
+soundfile==0.12.1
+psutil==6.1.1

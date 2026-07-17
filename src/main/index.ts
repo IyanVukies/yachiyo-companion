@@ -63,6 +63,9 @@ async function startApplication(): Promise<void> {
     projectRoot,
     process.resourcesPath,
     join(dataRoot, 'temp', 'audio'),
+    app.isPackaged
+      ? join(dataRoot, 'voice-runtime', '0.2.0')
+      : join(projectRoot, '.runtime-cache', 'models'),
     logger
   )
   const assetValidator = new AssetValidator(

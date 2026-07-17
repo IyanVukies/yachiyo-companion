@@ -103,6 +103,64 @@ export type VoiceCapabilities = {
   ffmpeg: boolean
   device: string
   detail: string
+  runtime: VoiceRuntimeStatus
+  deviceInfo: {
+    selected: string
+    cudaAvailable: boolean
+    cudaName: string | null
+    devices: string[]
+    torch: string | null
+    torchCuda: string | null
+  }
+  versions: Record<string, string | null>
+  lastMetrics: VoiceMetrics | null
+  lastPlayback: VoicePlaybackSummary | null
+}
+
+export type VoiceRuntimeStatus = {
+  state: 'checking' | 'setup-required' | 'downloading' | 'ready' | 'error'
+  stage: string
+  progress: number
+  downloadedBytes: number
+  totalBytes: number
+  currentAsset: string | null
+  error: string | null
+  assets: Record<
+    string,
+    {
+      label: string
+      state: string
+      bytes: number
+    }
+  >
+}
+
+export type VoiceMetrics = {
+  coldStartMs?: number
+  conversionMs?: number
+  featureMs?: number
+  pitchMs?: number
+  indexMs?: number
+  inferMs?: number
+  ttsMs?: number
+  totalMs?: number
+  cpuPercent?: number
+  peakRamMb?: number
+  sourceDurationMs?: number
+  audioDurationMs?: number
+  outputBytes?: number
+  device?: string
+  deviceName?: string
+  silence?: boolean
+}
+
+export type VoicePlaybackSummary = {
+  requestId: string
+  source: 'sidecar-rvc' | 'sidecar-basic'
+  playedAt: string
+  durationMs: number
+  maxLipSync: number
+  metrics: VoiceMetrics | null
 }
 
 export type AppStatus = {
@@ -190,6 +248,8 @@ export type VoiceResult = {
   audioBase64: string | null
   message: string
   fellBack: boolean
+  requestId: string | null
+  metrics: VoiceMetrics | null
 }
 
 export type ConnectionTestResult = {

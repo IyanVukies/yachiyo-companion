@@ -1,6 +1,6 @@
 # Yachiyo Companion
 
-Yachiyo Companion is a Windows desktop companion for an OpenAI-compatible Hermes Agent. Version 0.1.1 includes a polished animated fallback avatar, streaming mock chat, optional Basic TTS, a hardened local voice sidecar, tray controls, reminders, onboarding, diagnostics, external Live2D/RVC asset adapters, and an NSIS installer.
+Yachiyo Companion is a Windows desktop companion for an OpenAI-compatible Hermes Agent. Version 0.2.0 includes Mao Live2D support, streaming mock chat, Basic TTS plus Kobo RVC v2, a hardened local Python sidecar, tray controls, reminders, onboarding, diagnostics, external model adapters, and an NSIS installer.
 
 The application starts in local mock mode and needs no API key. A real Hermes connection is configured only inside Settings. The supplied Mao and Kobo assets remain external to the installer.
 
@@ -15,8 +15,9 @@ The application starts in local mock mode and needs no API key. A real Hermes co
 | Edge Basic TTS, 48 kHz mono conversion      | Verified                                                                              |
 | Browser/Windows TTS fallback                | Implemented                                                                           |
 | Mao asset selection and validation          | Folder/ZIP auto-scan, visible inventory, persistence, and root normalization verified |
-| Mao rendering                               | Adapter built; blocked because proprietary Cubism Core was not supplied               |
-| Kobo RVC                                    | Model/index verified; fallback active because RVC, RMVPE, and ContentVec are absent   |
+| Mao rendering and `ParamA` input            | Verified with the user-supplied official Cubism Core                                  |
+| Kobo RVC v2                                 | Real 48 kHz conversion verified on CPU; Basic fallback remains automatic              |
+| RVC setup/progress/device/tuning            | Pinned HuBERT/RMVPE setup and Basic/RVC comparison implemented                        |
 | Tray, reminders, persistence, clean restart | Verified in Electron E2E                                                              |
 
 ## Start here
@@ -32,7 +33,7 @@ The application starts in local mock mode and needs no API key. A real Hermes co
 
 ## Development
 
-Prerequisites: Node.js 22+, npm 11+, and Python 3.11+ or 3.13 for the sidecar.
+Prerequisites: Node.js 22+, npm 11+, and Python 3.11 for the RVC sidecar build.
 
 ```powershell
 npm install
@@ -49,13 +50,13 @@ npm run smoke:sidecar
 npm run package
 ```
 
-The sidecar environment used for this release is `.venv-sidecar`. Its pinned inputs are in `src/sidecar/rvc_service/requirements*.txt`.
+The sidecar environment used for this release is `.venv-rvc`. Its exact Windows wheel closure is in `src/sidecar/rvc_service/requirements-runtime-windows-py311.lock`; runtime model origins and hashes are in `runtime-manifest.json`.
 
 ## Technology
 
 - Electron 43, React 19, Vite 7, strict TypeScript 5.9
 - FastAPI/Python sidecar packaged with PyInstaller
-- Edge TTS plus bundled FFmpeg/FFprobe
+- Edge TTS, bundled FFmpeg/FFprobe, PyTorch/TorchAudio, RMVPE, and FAISS
 - Official Live2D Cubism Web Framework tag `5-r.5`; proprietary Core remains user-supplied
 - Vitest and Playwright Electron automation
 

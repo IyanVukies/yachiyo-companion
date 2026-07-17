@@ -51,3 +51,19 @@ The installer includes the application, voice sidecar, Framework adapter/shaders
 ## I-013 — Branded generated icon
 
 The release icon is generated deterministically from `build/icon.svg` into multi-size ICO/PNG outputs. This removes the generic Electron icon without adding a third-party artwork claim.
+
+## I-014 — Audited RVC runtime closure
+
+RVC code is pinned to official release `2.2.231006`; every Windows Python 3.11 wheel has an exact version and SHA-256 in the runtime lock. Checkpoints and runtime weights use safe tensor-only loading plus bounded structural checks.
+
+## I-015 — Data-only runtime acquisition
+
+The installer freezes executable code and native libraries. Settings downloads only the manifest-pinned HuBERT and RMVPE data assets through trusted HTTPS origins, exact size/hash verification, and atomic replacement.
+
+## I-016 — Independent FAISS process
+
+FAISS runs in a separate PyInstaller bundle with confined `.npy` exchange files, a fresh DLL search boundary, no sidecar bearer token, and one native thread. This avoids Torch/OpenMP collision and bounds CPU/RAM use.
+
+## I-017 — Restart replacement is ordered
+
+Voice-sidecar restart attaches an exit waiter before terminating the old child, waits up to five seconds, and ignores stale exit callbacks once a new child owns the service state. Asset selection therefore remains visibly loading until the normalized Kobo root is active.

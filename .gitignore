@@ -6,9 +6,13 @@ release/
 coverage/
 test-results/
 playwright-report/
-output/playwright/
+/output/
 .vite/
 .cache/
+.pytest_cache/
+**/.pytest_cache/
+.audit/
+.runtime-cache/
 build/sidecar/
 build/sidecar-debug/
 .venv/

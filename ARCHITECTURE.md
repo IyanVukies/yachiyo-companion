@@ -17,7 +17,9 @@ Electron main process
   └─ authenticated random-port voice sidecar
         │
         ├─ Edge TTS → FFmpeg mono 48 kHz WAV
-        └─ optional RVC → fail-closed Basic fallback
+        ├─ HuBERT + RMVPE + Kobo RVC v2
+        ├─ confined FAISS helper process
+        └─ 48 kHz WAV → WebAudio → Mao ParamA
 ```
 
 ## Process responsibilities
@@ -45,6 +47,12 @@ The main process owns all privileged operations:
 ### Voice sidecar
 
 Electron starts the packaged FastAPI sidecar on a reserved loopback port with a random 256-bit bearer token. Requests use strict Pydantic models, host/token checks, body limits, fixed executable paths, and shell-free subprocess calls. Temporary audio is kept beneath the app data directory and removed after use.
+
+The RVC path is fully sidecar-owned: Edge TTS creates Indonesian source speech, FFmpeg normalizes it to mono 48 kHz, TorchAudio HuBERT extracts v2 features, RMVPE extracts pitch, a confined FAISS helper retrieves Kobo index vectors, and the v2 synthesizer produces the final WAV. The renderer receives audio bytes and bounded metrics only. It never imports Python, PyTorch, model files, or native inference libraries.
+
+HuBERT/RMVPE setup is manifest-driven and data-only. Exact origins, sizes, and SHA-256 hashes are compiled into the sidecar. The frozen FAISS helper has an independent native-library boundary and one-thread OpenMP/OpenBLAS limits; the Torch parent retains normal CPU parallelism. A conversion failure returns a stable error to Electron, which retries Basic TTS and never crashes the desktop process.
+
+Long renderer replies are split at sentence boundaries and played sequentially. WebAudio's analyser drives `ParamA`; Electron accepts completion metrics only for a request ID it issued, preventing arbitrary renderer playback claims.
 
 ## Live2D path
 

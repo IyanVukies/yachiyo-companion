@@ -4,7 +4,7 @@ This guide is for installing and using Yachiyo Companion without a terminal.
 
 ## 1. Install
 
-1. Open `release\Yachiyo-Companion-0.1.1-x64-Setup.exe`.
+1. Open `release\Yachiyo-Companion-0.2.0-x64-Setup.exe`.
 2. Choose an installation folder and finish setup.
 3. Windows may show a SmartScreen warning because this personal build is not code-signed. Confirm the filename and SHA-256 value in `release\checksums.txt` before choosing **Run anyway**.
 4. Open **Yachiyo Companion** from the desktop or Start menu.
@@ -60,9 +60,9 @@ Open **Atur → Suara**.
 
 - **Basic** uses the packaged local sidecar and Edge TTS, then normalizes audio with FFmpeg. It may require internet access to Microsoft's speech service.
 - **Mati** disables speech.
-- **RVC** falls back clearly to Basic in this release because required RVC runtime files are absent.
+- **RVC** uses HuBERT, RMVPE, the selected Kobo RVC v2 checkpoint, and its FAISS index entirely inside the Python sidecar. If any stage fails, Basic is selected automatically without crashing the app.
 
-Choose **Tes suara**. See [VOICE-MODEL-GUIDE.md](VOICE-MODEL-GUIDE.md).
+If the runtime status says **perlu setup**, choose **Siapkan RVC** and leave the app open while the two pinned model assets download and verify. Then compare **Tes Basic** and **Tes RVC Kobo**. CPU mode works without NVIDIA; `auto` selects CUDA only when a compatible runtime is available. See [VOICE-MODEL-GUIDE.md](VOICE-MODEL-GUIDE.md).
 
 ## 8. Test a reminder
 

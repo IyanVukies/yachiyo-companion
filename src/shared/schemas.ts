@@ -271,3 +271,11 @@ export const voiceRequestSchema = z
     rvc: rvcSettingsSchema
   })
   .strict()
+
+export const voicePlaybackReportSchema = z
+  .object({
+    requestId: z.uuid(),
+    durationMs: z.number().min(0).max(120_000),
+    maxLipSync: z.number().min(0).max(1)
+  })
+  .strict()

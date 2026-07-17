@@ -41,7 +41,12 @@ import { SettingsStore } from '../../src/main/services/settings-store'
 import type { SecretVault } from '../../src/main/services/secret-vault'
 import { IPC } from '../../src/shared/ipc'
 import { defaultSettings, settingsSchema } from '../../src/shared/schemas'
-import type { AssetApplyResult, AssetDialogResult, AssetStatus } from '../../src/shared/types'
+import type {
+  AssetApplyResult,
+  AssetDialogResult,
+  AssetStatus,
+  VoiceCapabilities
+} from '../../src/shared/types'
 
 const roots: string[] = []
 
@@ -199,6 +204,30 @@ describe('asset IPC selection flow', () => {
       })
     ).rejects.toThrow('Path aset hanya dapat diubah melalui dialog pemilihan aset.')
   })
+
+  it('routes runtime setup and accepts only validated playback proof from the trusted renderer', async () => {
+    const fixture = await ipcFixture()
+
+    const capabilities = await invoke<VoiceCapabilities>(IPC.voiceRuntimeSetup, fixture.sender)
+    expect(capabilities.runtime.state).toBe('downloading')
+    expect(fixture.setupVoice).toHaveBeenCalledTimes(1)
+
+    const report = {
+      requestId: '00000000-0000-4000-8000-000000000220',
+      durationMs: 2_020,
+      maxLipSync: 0.74
+    }
+    const result = await invoke<{ ok: boolean }>(IPC.voicePlaybackReport, fixture.sender, report)
+    expect(result.ok).toBe(true)
+    expect(fixture.reportPlayback).toHaveBeenCalledWith(report)
+
+    await expect(
+      invoke(IPC.voicePlaybackReport, fixture.sender, { ...report, maxLipSync: 2 })
+    ).rejects.toThrow('Input aplikasi tidak valid.')
+    await expect(invoke(IPC.voicePlaybackReport, {}, report)).rejects.toThrow(
+      'IPC sender tidak tepercaya.'
+    )
+  })
 })
 
 async function ipcFixture(): Promise<{
@@ -208,6 +237,8 @@ async function ipcFixture(): Promise<{
   sender: object
   scan: ReturnType<typeof vi.fn>
   restartVoice: ReturnType<typeof vi.fn>
+  setupVoice: ReturnType<typeof vi.fn>
+  reportPlayback: ReturnType<typeof vi.fn>
   setAssetStatus: ReturnType<typeof vi.fn>
 }> {
   const root = await mkdtemp(join(tmpdir(), 'yachiyo-ipc-'))
@@ -220,6 +251,16 @@ async function ipcFixture(): Promise<{
   const sender = { send: vi.fn() }
   const scan = vi.fn().mockResolvedValue(missingStatus())
   const restartVoice = vi.fn().mockResolvedValue(undefined)
+  const setupVoice = vi.fn().mockResolvedValue(
+    voiceCapabilities({
+      state: 'downloading',
+      stage: 'Mengunduh HuBERT Base dari sumber resmi…',
+      progress: 1
+    })
+  )
+  const reportPlayback = vi
+    .fn()
+    .mockReturnValue({ ok: true, message: 'Playback voice terverifikasi.' })
   const setAssetStatus = vi.fn()
   let currentStatus = missingStatus()
   setAssetStatus.mockImplementation((status: AssetStatus) => {
@@ -244,15 +285,10 @@ async function ipcFixture(): Promise<{
     hermesClient: {},
     voiceSidecar: {
       restart: restartVoice,
-      capabilities: () => ({
-        sidecar: 'ready',
-        edgeTts: true,
-        browserTts: true,
-        rvc: false,
-        ffmpeg: true,
-        device: 'cpu',
-        detail: 'test'
-      }),
+      capabilities: () => voiceCapabilities(),
+      refreshCapabilities: vi.fn().mockResolvedValue(voiceCapabilities()),
+      setupRuntime: setupVoice,
+      reportPlayback,
       synthesize: vi.fn(),
       stopCurrent: vi.fn()
     },
@@ -269,7 +305,17 @@ async function ipcFixture(): Promise<{
     setAssetStatus
   } as never)
 
-  return { root, settingsPath, store, sender, scan, restartVoice, setAssetStatus }
+  return {
+    root,
+    settingsPath,
+    store,
+    sender,
+    scan,
+    restartVoice,
+    setupVoice,
+    reportPlayback,
+    setAssetStatus
+  }
 }
 
 async function invoke<T>(channel: string, sender: object, input?: unknown): Promise<T> {
@@ -361,6 +407,40 @@ function koboStatus(root: string): AssetStatus {
       metadata: { version: 'v2', sampleRate: '48k', f0: true, info: '500epoch' },
       issues: [{ code: 'RVC_RUNTIME_MISSING', message: 'Runtime belum lengkap.' }]
     }
+  }
+}
+
+function voiceCapabilities(runtime: Partial<VoiceCapabilities['runtime']> = {}): VoiceCapabilities {
+  return {
+    sidecar: 'ready',
+    edgeTts: true,
+    browserTts: true,
+    rvc: false,
+    ffmpeg: true,
+    device: 'cpu',
+    detail: 'Basic TTS siap.',
+    runtime: {
+      state: 'setup-required',
+      stage: 'Runtime RVC perlu disiapkan.',
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: 558_749_677,
+      currentAsset: null,
+      error: null,
+      assets: {},
+      ...runtime
+    },
+    deviceInfo: {
+      selected: 'cpu',
+      cudaAvailable: false,
+      cudaName: null,
+      devices: ['cpu'],
+      torch: '2.7.1+cpu',
+      torchCuda: null
+    },
+    versions: { torch: '2.7.1+cpu' },
+    lastMetrics: null,
+    lastPlayback: null
   }
 }
 

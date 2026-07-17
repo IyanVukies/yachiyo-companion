@@ -25,6 +25,6 @@ Inspected on 2026-07-17 in `D:\Tegar\Self Project\Yachiyo_Companion`.
 
 - Node 22.17 satisfies the selected Vite/Electron toolchain.
 - TypeScript remains on the mature 5.9 line instead of the new 7.x line to reduce tooling incompatibility.
-- Python 3.13 is suitable for the lightweight FastAPI/Edge TTS sidecar; optional RVC experiments use Python 3.11 because that ecosystem is better supported there.
+- The production FastAPI/RVC sidecar is frozen from Python 3.11.9. Python 3.13 is not used by the packaged inference runtime.
 - FFmpeg/FFprobe are supplied through pinned application dependencies or the sidecar build rather than changing the system PATH.
-- RVC defaults to CPU on this machine. UI and chat remain responsive because conversion is isolated in the sidecar.
+- RVC `auto` resolves to CPU on this machine. The final frozen proof measured a 7.49 s cold engine load, 15.56 s cold conversion, 12.60 s warm conversion, and approximately 1.73 GB peak sidecar RAM. UI and chat remain isolated from inference.

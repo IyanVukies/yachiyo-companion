@@ -43,7 +43,13 @@ test('packaged executable starts with clean-profile fallbacks and bundled sideca
             getAppStatus: () => Promise<{
               assets: { live2d: { state: string }; voice: { state: string } }
               trayReady: boolean
-              voice: { sidecar: string; edgeTts: boolean; ffmpeg: boolean; rvc: boolean }
+              voice: {
+                sidecar: string
+                edgeTts: boolean
+                ffmpeg: boolean
+                rvc: boolean
+                runtime: { state: string }
+              }
             }>
           }
         }
@@ -57,6 +63,7 @@ test('packaged executable starts with clean-profile fallbacks and bundled sideca
     expect(status.voice.edgeTts).toBe(true)
     expect(status.voice.ffmpeg).toBe(true)
     expect(status.voice.rvc).toBe(false)
+    expect(status.voice.runtime.state).toBe('setup-required')
 
     await page.getByRole('button', { name: 'Lanjut' }).click()
     await expect(page.getByText('Mao runtime')).toBeVisible()
@@ -66,6 +73,16 @@ test('packaged executable starts with clean-profile fallbacks and bundled sideca
     await expect(page.getByText('Fallback aktif', { exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: 'Atur' }).click()
+    await page
+      .getByLabel('Bagian pengaturan')
+      .getByRole('button', { name: 'Suara', exact: true })
+      .click()
+    await expect(page.getByTestId('voice-runtime-status')).toContainText(
+      'Runtime RVC · perlu setup'
+    )
+    await expect(page.getByRole('button', { name: 'Siapkan RVC' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Tes Basic' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Tes RVC Kobo' })).toBeDisabled()
     await page
       .getByLabel('Bagian pengaturan')
       .getByRole('button', { name: 'Aset', exact: true })
