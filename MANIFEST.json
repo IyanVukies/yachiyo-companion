@@ -1,0 +1,26 @@
+{
+  "project": "Yachiyo Companion",
+  "artifact_type": "Markdown planning handover",
+  "contains_assets": false,
+  "file_count": 17,
+  "files": [
+    "00_START_HERE_SOL.md",
+    "01_PROJECT_CONTEXT.md",
+    "02_PRODUCT_REQUIREMENTS.md",
+    "03_SCOPE_AND_NON_GOALS.md",
+    "04_TARGET_ARCHITECTURE.md",
+    "05_ASSET_PLACEMENT_AND_CONTRACT.md",
+    "06_LIVE2D_IMPLEMENTATION_PLAN.md",
+    "07_VOICE_PIPELINE_PLAN.md",
+    "08_HERMES_INTEGRATION_PLAN.md",
+    "09_PROACTIVE_INTERACTION_PLAN.md",
+    "10_SECURITY_PRIVACY_AND_LICENSING.md",
+    "11_IMPLEMENTATION_ROADMAP.md",
+    "12_TESTING_AND_ACCEPTANCE.md",
+    "13_RELEASE_AND_HANDOVER.md",
+    "14_SOL_MASTER_EXECUTION_PROMPT.md",
+    "15_DECISION_LOG.md",
+    "README.md"
+  ],
+  "created_at": "2026-07-16T20:55:25"
+}

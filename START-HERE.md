@@ -1,0 +1,81 @@
+# Start Here
+
+This guide is for installing and using Yachiyo Companion without a terminal.
+
+## 1. Install
+
+1. Open `release\Yachiyo-Companion-0.1.0-x64-Setup.exe`.
+2. Choose an installation folder and finish setup.
+3. Windows may show a SmartScreen warning because this personal build is not code-signed. Confirm the filename and SHA-256 value in `release\checksums.txt` before choosing **Run anyway**.
+4. Open **Yachiyo Companion** from the desktop or Start menu.
+
+The app starts with Hermes mock, the animated fallback avatar, microphone off, and no API key.
+
+## 2. Complete onboarding
+
+Use **Lanjut** twice, review the detected capabilities, then choose **Buka Yachiyo**. Missing optional assets do not prevent use.
+
+## 3. Select the supplied assets
+
+Open **Atur → Aset**.
+
+- Select `assets\source\mao_en` for **Niziiro Mao**. Choose the folder that contains the `runtime` directory.
+- Select `assets\source\kobo` for **Kobo RVC**. The detector handles its extra nested `kobo` folder.
+- Choose **Scan ulang aset**.
+
+The personal installer intentionally does not copy Mao or Kobo. Keeping them external avoids redistributing assets with unresolved or separate license terms.
+
+## 4. Optional: enable Mao rendering
+
+The supplied files do not contain Live2D Cubism Core. Mao cannot render until you personally accept Live2D's terms and obtain the official Web Core file.
+
+1. Obtain `live2dcubismcore.min.js` from the official Cubism SDK for Web.
+2. Open **Atur → Aset → Cubism Core resmi**.
+3. Select that exact file, save, and rescan.
+
+Do not rename an unrelated script. Yachiyo checks the exact filename and expected Core markers. See [LIVE2D-MODEL-GUIDE.md](LIVE2D-MODEL-GUIDE.md).
+
+## 5. Test chat
+
+1. Choose **Chat**.
+2. Type a message and choose **Kirim**.
+3. The **Mock lokal** badge confirms no remote Hermes or key is being used.
+
+Useful mock checks include `/mock 500`, `/mock 429`, `/mock slow`, and `/mock malformed`.
+
+## 6. Add the real Hermes connection
+
+Open **Atur → Hermes**, choose **Hermes VPS**, then enter:
+
+- the HTTPS base URL;
+- the model name;
+- the API key.
+
+Choose **Tes koneksi** before **Simpan**. Enter the key only in this settings screen—never in chat, a screenshot, or a diagnostics file. See [HERMES-VPS-GUIDE.md](HERMES-VPS-GUIDE.md).
+
+## 7. Test voice
+
+Open **Atur → Suara**.
+
+- **Basic** uses the packaged local sidecar and Edge TTS, then normalizes audio with FFmpeg. It may require internet access to Microsoft's speech service.
+- **Mati** disables speech.
+- **RVC** falls back clearly to Basic in this release because required RVC runtime files are absent.
+
+Choose **Tes suara**. See [VOICE-MODEL-GUIDE.md](VOICE-MODEL-GUIDE.md).
+
+## 8. Test a reminder
+
+Choose **Ingat → Kirim notifikasi tes**. Quiet hours, minimum gaps, deduplication, and daily limits are enforced locally.
+
+## 9. Recover the window
+
+- If clicks pass through the app, press **Ctrl+Shift+F12**.
+- If the app is hidden, click its tray icon.
+- To restore a misplaced window, use the tray menu or **Atur → Desktop → Reset posisi**.
+
+## 10. Reset or collect diagnostics
+
+- Reset: **Atur → Tentang → Reset semua pengaturan**.
+- Safe report: **Atur → Privasi → Ekspor diagnostik aman**.
+
+The diagnostics report excludes API keys, tokens, raw absolute asset paths, conversations, and audio. For symptom-based help, use [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

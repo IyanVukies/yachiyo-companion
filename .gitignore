@@ -1,0 +1,38 @@
+node_modules/
+dist/
+dist-electron/
+out/
+release/
+coverage/
+test-results/
+playwright-report/
+output/playwright/
+.vite/
+.cache/
+build/sidecar/
+build/sidecar-debug/
+.venv/
+.venv-*/
+__pycache__/
+*.py[cod]
+*.log
+*.tmp
+*.wav
+*.mp3
+.env
+.env.local
+
+# User-supplied or licensed assets stay external to source control.
+assets/source/
+project-assets/live2d/*
+project-assets/voice/*
+!project-assets/live2d/.gitkeep
+!project-assets/voice/.gitkeep
+!project-assets/README-PLACE-ASSETS-HERE.md
+
+# Local application state and secrets.
+.yachiyo-data/
+diagnostics/*.json
+
+# Generated from the pinned official Cubism Web Framework source.
+src/renderer/public/live2d/

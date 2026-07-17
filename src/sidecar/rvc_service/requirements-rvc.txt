@@ -1,0 +1,3 @@
+# Optional personal-use runtime. Install only into the Python 3.11 RVC environment.
+rvc-python==0.1.5
+
